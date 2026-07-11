@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UMO · Бинар — планировщик сервисной кампании</title>
+<script id="design-tokens" type="application/json">
+{
+  "system": "световой тоннель",
+  "palette": {
+    "bg": "#0A0B0D", "panel": "#14161A", "panel2": "#191C21", "border": "#26292E",
+    "textPrimary": "#F4F5F7", "textSecondary": "#8A9099",
+    "action": "#FC3F1D",
+    "heat": { "hot": "#FF2E1A", "mid": "#FF8A00", "warm": "#FFC93D" },
+    "cold": "#7C8DA0"
+  },
+  "type": { "display": "condensed, uppercase, skewX(-12deg) на бейджах", "body": "Inter/system", "mono": "ui-monospace" },
+  "semantics": "тепловой градиент — только прогресс кампании/оснащения; красный — действия, хаб, дефицит; холодный серо-голубой — «до установки»"
+}
+</script>
+<style>
+:root{
+  --bg:#0A0B0D; --panel:#14161A; --panel2:#191C21; --border:#26292E;
+  --text:#F4F5F7; --text2:#8A9099;
+  --action:#FC3F1D; --hot:#FF2E1A; --mid:#FF8A00; --warm:#FFC93D; --cold:#7C8DA0;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+  --disp:'Arial Narrow','Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font:14px/1.45 Inter,-apple-system,'Segoe UI',Roboto,sans-serif}
+body{padding:0 0 60px}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit;color:var(--text);background:#0F1114;border:1px solid var(--border);border-radius:6px;padding:4px 8px;outline:none}
+input:focus,select:focus,button:focus-visible{border-color:var(--mid);box-shadow:0 0 0 2px rgba(255,138,0,.25)}
+input[type=number]{font-family:var(--mono);width:64px;text-align:right}
+input[type=date]{font-family:var(--mono);color-scheme:dark}
+input[type=checkbox]{accent-color:var(--action);width:15px;height:15px}
+::-webkit-scrollbar{height:10px;width:10px}
+::-webkit-scrollbar-thumb{background:#2A2E34;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- шапка ---------- */
+.hdr{padding:16px 22px 12px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0D0F12,var(--bg))}
+.hdr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:12px;font-size:21px;font-weight:600;letter-spacing:1.5px}
+.badge{display:inline-block;transform:skewX(-12deg);background:var(--action);color:#fff;font-size:12px;font-weight:600;padding:3px 12px;letter-spacing:.4px}
+.chip{font-size:12.5px;font-weight:600;padding:5px 14px;border-radius:4px;transform:skewX(-12deg)}
+.chip>span{display:inline-block;transform:skewX(12deg)}
+.chip.ok{background:rgba(255,201,61,.15);color:var(--warm);border:1px solid rgba(255,201,61,.4)}
+.chip.risk{background:rgba(255,138,0,.14);color:var(--mid);border:1px solid rgba(255,138,0,.45)}
+.chip.fail{background:rgba(252,63,29,.14);color:#FF6B4D;border:1px solid rgba(252,63,29,.5)}
+.heat{height:8px;border-radius:4px;background:#1A1D21;position:relative;overflow:hidden}
+.heat-fill{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:linear-gradient(90deg,var(--hot),var(--mid),var(--warm));transition:width .5s ease;width:0}
+.heat-cap{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);margin:5px 0 12px;font-family:var(--mono)}
+.heat-cap b{color:var(--warm);font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 12px}
+.kpi-l{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.kpi-v{font-size:18px;font-weight:600;font-family:var(--mono);white-space:nowrap}
+.kpi-v small{font-size:12px;color:var(--text2);font-weight:400}
+
+/* ---------- вкладки ---------- */
+.tabs{display:flex;gap:2px;padding:0 22px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:20}
+.tab{background:none;border:none;color:var(--text2);padding:12px 18px 10px;font-size:14px;font-weight:500;position:relative}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text)}
+.tab.active::after{content:'';position:absolute;left:12px;right:12px;bottom:-1px;height:3px;background:var(--action);transform:skewX(-25deg)}
+.tabpane{display:none;padding:18px 22px;max-width:1500px}
+.tabpane.active{display:block}
+
+/* ---------- секции вводных ---------- */
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:6px;font-size:13px}
+.btn:hover{border-color:#3A3F46}
+.btn.primary{background:var(--action);border-color:var(--action);color:#fff;font-weight:600}
+.btn.primary:hover{background:#E23315}
+.btn.mini{padding:3px 10px;font-size:12px}
+.note{font-size:12px;color:var(--text2)}
+details.sec{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+details.sec>summary{cursor:pointer;list-style:none;padding:12px 16px;display:flex;align-items:center;gap:10px;user-select:none}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary::before{content:'';width:9px;height:9px;border-right:2px solid var(--text2);border-bottom:2px solid var(--text2);transform:rotate(-45deg);transition:transform .15s;flex:none}
+details.sec[open]>summary::before{transform:rotate(45deg)}
+.sec-t{font-family:var(--disp);font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:1px}
+.sec-hint{font-size:12px;color:var(--text2);font-weight:400;margin-left:auto;font-family:var(--mono)}
+.sec-body{padding:4px 16px 16px;border-top:1px solid var(--border)}
+.frow{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end;margin:12px 0}
+.f{display:flex;flex-direction:column;gap:4px}
+.f label{font-size:11.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+
+/* ---------- таблицы ---------- */
+table{border-collapse:collapse;font-size:13px}
+th{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:500;padding:6px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td{padding:4px 8px;border-bottom:1px solid #1C1F24;font-family:var(--mono);text-align:right;white-space:nowrap}
+td.t{font-family:Inter,sans-serif;text-align:left}
+td.dim{color:#4A5058}
+tr:hover td{background:#16191E}
+.sum{color:var(--warm);font-weight:600}
+.tblwrap{overflow-x:auto}
+
+/* ---------- сервисы ---------- */
+.city-block{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;background:var(--panel2)}
+.city-head{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.city-name{font-weight:600;font-size:14px}
+.city-meta{font-size:12px;color:var(--text2);font-family:var(--mono)}
+.dot{width:8px;height:8px;border-radius:2px;transform:rotate(45deg);flex:none}
+.dot.ok{background:var(--warm)} .dot.risk{background:var(--mid)} .dot.fail{background:var(--action)}
+.hub-tag{font-size:10.5px;font-weight:700;color:#fff;background:var(--action);padding:2px 8px;transform:skewX(-12deg);letter-spacing:.5px}
+.svc-cap{color:var(--cold)}
+.svc-cap b{color:var(--text);font-weight:600}
+.del{background:none;border:none;color:var(--text2);font-size:15px;padding:2px 6px}
+.del:hover{color:var(--action)}
+input.sname{width:110px;font-size:12.5px}
+
+/* ---------- проверка расчёта ---------- */
+.verify{font-family:var(--mono);font-size:13px;line-height:1.9;background:#0F1114;border:1px solid var(--border);border-radius:8px;padding:14px 16px;max-width:720px}
+.verify .hl{color:var(--warm)} .verify .bind{color:var(--mid);font-weight:600} .verify .mut{color:var(--text2)}
+
+/* ---------- план ---------- */
+.recs{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;max-width:900px}
+.rec{display:flex;gap:10px;align-items:flex-start;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cold);border-radius:6px;padding:9px 13px;font-size:13px}
+.rec.warn{border-left-color:var(--mid)} .rec.crit{border-left-color:var(--action)} .rec.good{border-left-color:var(--warm)}
+.rec b{font-weight:600}
+h3.pt{font-family:var(--disp);font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:1px;margin:22px 0 10px}
+td.q0{color:#3A3F46} td.qv{color:var(--text)} 
+tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:Inter,sans-serif;text-align:left}
+.legend{font-size:12px;color:var(--text2);margin-top:8px}
+
+/* ---------- заглушки этапов ---------- */
+.stub{border:1px dashed #2E3238;border-radius:12px;padding:40px 30px;max-width:760px;text-align:left;color:var(--text2)}
+.stub h2{font-family:var(--disp);text-transform:uppercase;letter-spacing:1.2px;color:var(--text);font-size:18px;margin-bottom:10px}
+.stub .stage{display:inline-block;transform:skewX(-12deg);background:#22262C;color:var(--cold);font-size:11.5px;font-weight:600;padding:2px 10px;margin-bottom:14px;letter-spacing:.5px}
+.stub ul{margin:10px 0 0 18px;line-height:1.8}
+@media (prefers-reduced-motion: reduce){ .heat-fill{transition:none} }
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-row">
+    <div class="brand">umo <span class="badge">Бинар · осень 2026</span></div>
+    <div id="statusChip" class="chip fail"><span>—</span></div>
+  </div>
+  <div class="heat"><div class="heat-fill" id="heatFill"></div></div>
+  <div class="heat-cap"><span id="heatLabel">—</span><span id="heatPct">—</span></div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-l">Парк кампании</div><div class="kpi-v" id="kpiTotal">—</div></div>
+    <div class="kpi"><div class="kpi-l" id="kpiDoneL">Оснащено к дедлайну</div><div class="kpi-v" id="kpiDone">—</div></div>
+    <div class="kpi"><div class="kpi-l">Прогноз финиша</div><div class="kpi-v" id="kpiFinish">—</div></div>
+    <div class="kpi"><div class="kpi-l">Темп · надо / есть, маш/нед</div><div class="kpi-v" id="kpiRate">—</div></div>
+    <div class="kpi"><div class="kpi-l">Хабы · пик, бамперов/день</div><div class="kpi-v" id="kpiHub">—</div></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="inputs">Вводные</button>
+  <button class="tab" data-tab="sim">Симуляция</button>
+  <button class="tab" data-tab="dash">Дашборд</button>
+  <button class="tab" data-tab="plan">План</button>
+</nav>
+
+<main>
+<section id="tab-inputs" class="tabpane active">
+  <div class="toolbar">
+    <button class="btn primary" id="btnExport">Сохранить сценарий (JSON)</button>
+    <button class="btn" id="btnImport">Загрузить сценарий</button>
+    <input type="file" id="fileImport" accept=".json,application/json" hidden>
+    <button class="btn" id="btnReset">Сбросить к базовому</button>
+    <span class="note">Все параметры пересчитывают модель мгновенно</span>
+  </div>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Календарь кампании</span><span class="sec-hint" id="hintCal"></span></summary>
+    <div class="sec-body" id="calBox"></div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Парк по городам</span><span class="sec-hint" id="hintDemand"></span></summary>
+    <div class="sec-body">
+      <div class="tblwrap" id="demandBox"></div>
+      <div class="note" style="margin-top:8px">Июль и август — машины, накопленные к старту кампании. Сентябрь и октябрь распределяются равномерно по понедельникам месяца. Логистика — срок доставки бампера до хаба и обратно, дней в одну сторону.</div>
+    </div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Техпроцесс монтажа</span><span class="sec-hint" id="hintProc"></span></summary>
+    <div class="sec-body" id="procBox"></div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Бамперный контур</span><span class="sec-hint" id="hintBump"></span></summary>
+    <div class="sec-body" id="bumpBox"></div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Сервисы по городам</span><span class="sec-hint" id="hintSvc"></span></summary>
+    <div class="sec-body" id="svcBox"></div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">Проверка расчёта мощности</span><span class="sec-hint">сверка руками</span></summary>
+    <div class="sec-body">
+      <div class="frow"><div class="f"><label>Сервис</label><select id="verifySel" style="min-width:260px"></select></div></div>
+      <div class="verify" id="verifyBox"></div>
+    </div>
+  </details>
+</section>
+
+<section id="tab-sim" class="tabpane">
+  <div class="stub">
+    <span class="stage">Этап 4 · в разработке</span>
+    <h2>Симуляция на карте</h2>
+    <p>Здесь будет тёмная SVG-схема России с плейбэком кампании по дням:</p>
+    <ul>
+      <li>города — гранёные узлы, наливаются тепловым градиентом по % оснащения;</li>
+      <li>пунктирные «топливопроводы» — движение бамперов в хабы Мск/СпБ и обратно;</li>
+      <li>красный пульс на узких местах, скраббер по неделям.</li>
+    </ul>
+    <p style="margin-top:12px">Расчётное ядро уже работает — результаты прогона смотрите во вкладках «План» и в шапке.</p>
+  </div>
+</section>
+
+<section id="tab-dash" class="tabpane">
+  <div class="stub">
+    <span class="stage">Этап 3 · в разработке</span>
+    <h2>Дашборд</h2>
+    <p>Здесь появятся:</p>
+    <ul>
+      <li>светофоры по городам и график «требуемый темп vs мощность»;</li>
+      <li>недельный Gantt загрузки сервисов с DRL-полосами слотов;</li>
+      <li>динамика обменного фонда бамперов и загрузка хабов;</li>
+      <li>план потребности в китах Бинар по городам и неделям.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="tab-plan" class="tabpane">
+  <h3 class="pt" style="margin-top:0">Рекомендации модели</h3>
+  <div class="recs" id="recsBox"></div>
+  <h3 class="pt">Недельные квоты по сервисам, машин</h3>
+  <div class="tblwrap" id="quotaBox"></div>
+  <div class="legend">Квота — сколько машин должно приехать в сервис на неделе (результат прогона симуляции с учётом бамперного контура и кривой обучения). Колонка «хвост» — установки после дедлайна.</div>
+  <h3 class="pt">Потребность в китах Бинар по городам, шт</h3>
+  <div class="tblwrap" id="kitsBox"></div>
+  <div class="legend" id="kitsNote"></div>
+</section>
+</main>
+
