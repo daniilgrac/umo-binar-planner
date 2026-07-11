@@ -45,7 +45,8 @@ input[type=checkbox]{accent-color:var(--action);width:15px;height:15px}
 /* ---------- шапка ---------- */
 .hdr{padding:16px 22px 12px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#0D0F12,var(--bg))}
 .hdr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
-.brand{display:flex;align-items:center;gap:12px;font-size:21px;font-weight:600;letter-spacing:1.5px}
+.brand{display:flex;align-items:center;gap:12px;color:var(--text)}
+.brand .logo{height:20px;width:auto;display:block}
 .badge{display:inline-block;transform:skewX(-12deg);background:var(--action);color:#fff;font-size:12px;font-weight:600;padding:3px 12px;letter-spacing:.4px}
 .chip{font-size:12.5px;font-weight:600;padding:5px 14px;border-radius:4px;transform:skewX(-12deg)}
 .chip>span{display:inline-block;transform:skewX(12deg)}
@@ -150,7 +151,14 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
 
 <header class="hdr">
   <div class="hdr-row">
-    <div class="brand">umo <span class="badge">Бинар · осень 2026</span></div>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 264 53" fill="currentColor" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UMO">
+        <path d="M19.8132 33.8555H54.0898V0H73.9031V33.8555C73.9031 47.4553 67.4672 53 54.0898 53H19.8132C6.44257 53 0 47.4623 0 33.8555V0H19.8132V33.8555Z"/>
+        <path d="M120.278 19.144H100.464V53H80.6517V19.144C80.6517 5.54424 87.0871 0 100.464 0H120.278V19.144Z"/>
+        <path d="M159.902 0C173.272 0 179.715 5.53719 179.715 19.144V53H159.902V19.144H140.091V52.999H120.277L120.278 19.144L140.089 19.143V0H159.902Z"/>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M244.187 0C257.558 0 264 5.53719 264 19.144V33.8555C264 47.4558 257.565 53 244.187 53H205.944C192.573 53 186.131 47.4623 186.131 33.8555V19.144C186.131 5.54424 192.573 0 205.944 0H244.187ZM205.944 33.8555H244.187V19.144H205.944V33.8555Z"/>
+      </svg>
+      <span class="badge">Бинар · осень 2026</span></div>
     <div id="statusChip" class="chip fail"><span>—</span></div>
   </div>
   <div class="heat"><div class="heat-fill" id="heatFill"></div></div>
