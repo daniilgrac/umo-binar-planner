@@ -57,6 +57,21 @@ step(() => {
   check('Дашборд: темп vs мощность', document.querySelectorAll('#dashPace .pace-row').length === 14);
   check('Дашборд: Gantt сервисов', document.querySelectorAll('#dashGantt td').length > 100);
   check('Дашборд: графики хабов и фонда (SVG)', !!document.querySelector('#dashHub svg') && !!document.querySelector('#dashPool svg'));
+  check('Симуляция: карта с узлами городов', document.querySelectorAll('#simSvg [data-count]').length === 14,
+    document.querySelectorAll('#simSvg [data-count]').length);
+  check('Симуляция: маршруты к хабам', document.querySelectorAll('#simSvg .route').length === 12);
+  check('Симуляция: readout заполнен', txt('#simReadout').includes('оснащено'));
+});
+
+/* ---------- скраббер симуляции ---------- */
+step(() => {
+  const scrub = $('#simScrub');
+  scrub.value = String(+scrub.max);
+  fire(scrub, 'input');
+  const doneTxt = txt('#simReadout');
+  check('Скраббер: перемотка в конец меняет кадр', doneTxt.includes('%') && !doneTxt.startsWith('оснащено 0'), doneTxt.slice(0, 60));
+  const mskCnt = document.querySelector('[data-count="msk"]').textContent;
+  check('Скраббер: счётчик Москвы в конце > 0', /^[1-9]/.test(mskCnt), mskCnt);
 });
 
 /* ---------- 2. живой пересчёт: правим парк Москвы ---------- */

@@ -181,6 +181,8 @@ function runSim(sc) {
   const doneCum = new Float64Array(nDays);
   const stockSeries = {}; nonHub.forEach(c => stockSeries[c.id] = new Float64Array(nDays));
   const queueSeries = {}; cities.forEach(c => queueSeries[c.id] = new Float64Array(nDays));
+  const doneSeries = {}; cities.forEach(c => doneSeries[c.id] = new Float64Array(nDays));
+  const starvedSeries = {}; nonHub.forEach(c => starvedSeries[c.id] = new Uint8Array(nDays));
 
   const deadlineIdx = idx(deadline);
   let totDone = 0, finishIdx = -1;
@@ -222,7 +224,7 @@ function runSim(sc) {
       } else {
         const wantable = Math.min(cap, queue[c.id]);
         inst = Math.min(wantable, stock[c.id]);
-        if (inst < wantable - 1e-9) starvedDays[c.id]++;
+        if (inst < wantable - 1e-9) { starvedDays[c.id]++; starvedSeries[c.id][i] = 1; }
         queue[c.id] -= inst;
         stock[c.id] -= inst;
         if (inst > 0) toHub.push({ arrive: i + (+c.transitDays || 0), qty: inst });
@@ -269,7 +271,7 @@ function runSim(sc) {
     doneCum[i] = totDone;
     hubQueueSeries[i] = hubQueue;
     nonHub.forEach(c => stockSeries[c.id][i] = stock[c.id]);
-    cities.forEach(c => queueSeries[c.id][i] = queue[c.id]);
+    cities.forEach(c => { queueSeries[c.id][i] = queue[c.id]; doneSeries[c.id][i] = done[c.id]; });
     if (finishIdx < 0 && totalDemand > 0 && totDone >= totalDemand - 1e-6) finishIdx = i;
     if (i === deadlineIdx) doneAtDeadline = Object.assign({}, done);
   }
@@ -324,7 +326,7 @@ function runSim(sc) {
     capBySvc, capByCity, cityStats, totalByCity, refLine,
     hubCapDay, hubPeak, hubAvg: hubDaysCnt ? hubSum / hubDaysCnt : 0,
     hubQueuePeak, hubQueueEnd: hubQueue, hubQueueSeries, hubLoadSeries: hubLoad,
-    stockSeries, queueSeries, starvedDays
+    stockSeries, queueSeries, doneSeries, starvedSeries, starvedDays
   };
 }
 

@@ -139,6 +139,27 @@ td.q0{color:#3A3F46} td.qv{color:var(--text)}
 tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:Inter,sans-serif;text-align:left}
 .legend{font-size:12px;color:var(--text2);margin-top:8px}
 
+/* ---------- симуляция ---------- */
+.sim-controls{display:flex;gap:14px;align-items:center;margin-bottom:10px;max-width:1100px}
+.sim-controls input[type=range]{flex:1;accent-color:var(--action);background:transparent;border:none;padding:0}
+.sim-date{font-family:var(--mono);font-size:13px;color:var(--warm);min-width:150px;text-align:right;white-space:nowrap}
+.sim-readout{display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;color:var(--text2);margin-bottom:10px}
+.sim-readout b{color:var(--warm);font-weight:600}
+.sim-readout .alert{color:var(--action)}
+.sim-map{background:var(--panel);border:1px solid var(--border);border-radius:12px;max-width:1100px;overflow:hidden}
+.sim-map svg{display:block;width:100%;height:auto}
+.ru-contour{fill:none;stroke:rgba(244,245,247,.10);stroke-width:1.5;stroke-dasharray:6 5}
+.route{fill:none;stroke:rgba(252,63,29,.28);stroke-width:1.3;stroke-dasharray:5 4}
+.route.active{stroke:rgba(252,63,29,.75);animation:routeflow 1.1s linear infinite}
+.node-shape{stroke-width:2}
+.node-label{font:10.5px Inter,sans-serif;fill:#8A9099}
+.node-count{font:600 10.5px ui-monospace,monospace;fill:#FFC93D}
+.pulse-ring{fill:none;stroke:var(--action);stroke-width:2;opacity:0;pointer-events:none;transform-box:fill-box;transform-origin:center}
+.pulse-ring.on{animation:nodepulse 1.1s ease-out infinite}
+@keyframes routeflow{to{stroke-dashoffset:-18}}
+@keyframes nodepulse{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.8)}}
+@media (prefers-reduced-motion: reduce){ .route.active{animation:none} .pulse-ring.on{animation:none;opacity:.7} }
+
 /* ---------- дашборд ---------- */
 .citygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px;max-width:1400px}
 .citycard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 13px}
@@ -266,17 +287,14 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
 </section>
 
 <section id="tab-sim" class="tabpane">
-  <div class="stub">
-    <span class="stage">Этап 4 · в разработке</span>
-    <h2>Симуляция на карте</h2>
-    <p>Здесь будет тёмная SVG-схема России с плейбэком кампании по дням:</p>
-    <ul>
-      <li>города — гранёные узлы, наливаются тепловым градиентом по % оснащения;</li>
-      <li>пунктирные «топливопроводы» — движение бамперов в хабы Мск/СпБ и обратно;</li>
-      <li>красный пульс на узких местах, скраббер по неделям.</li>
-    </ul>
-    <p style="margin-top:12px">Расчётное ядро уже работает — результаты прогона смотрите во вкладках «План» и в шапке.</p>
+  <div class="sim-controls">
+    <button class="btn primary" id="simPlay">▶ Play</button>
+    <input type="range" id="simScrub" min="0" max="1" value="0" step="1">
+    <span class="sim-date" id="simDate">—</span>
   </div>
+  <div class="sim-readout" id="simReadout"></div>
+  <div class="sim-map"><svg id="simSvg" viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div class="legend">Узлы наливаются тепловым градиентом по доле оснащённого парка на текущий день. Пунктирные топливопроводы — маршруты бамперов в хабы; линия оживает, когда город работает. Красный пульс — узкое место: город простаивает без бамперов или очередь хаба выше дневной мощности. Скраббер — по дням, метки — понедельники недель.</div>
 </section>
 
 <section id="tab-dash" class="tabpane">

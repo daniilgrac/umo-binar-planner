@@ -306,6 +306,134 @@ function renderQuotas() {
   $('#quotaBox').innerHTML = `<table>${head}${body}</table>`;
 }
 
+/* ---------- вкладка Симуляция ---------- */
+// стилизованные позиции городов (не картография: европейская часть растянута ради читаемости)
+const SIM_XY = {
+  spb: [268, 148], msk: [300, 252], nn: [382, 238], kzn: [446, 258],
+  perm: [502, 196], ekb: [548, 228], ufa: [508, 302],
+  vrn: [298, 332], tmb: [348, 318], rnd: [278, 402], krd: [252, 448], sochi: [292, 490],
+  nsk: [700, 302], krsk: [792, 258]
+};
+const RU_PATH = 'M232,178 L246,120 L330,92 L420,70 L540,56 L680,62 L830,54 L930,84 L944,190 L900,300 L820,360 L700,352 L560,356 L470,362 L410,380 L352,432 L318,508 L268,472 L256,420 L232,352 L214,262 Z';
+
+let simDay = null, simTimer = null;
+const SIM_GEOM = {};
+
+function pentPts(cx, cy, s) {
+  return [[0, -20], [22, -8], [16, 20], [-16, 20], [-22, -8]]
+    .map(([x, y]) => (cx + x * s).toFixed(1) + ',' + (cy + y * s).toFixed(1)).join(' ');
+}
+function lerpColor(a, b, t) {
+  const pa = [1, 3, 5].map(k => parseInt(a.slice(k, k + 2), 16));
+  const pb = [1, 3, 5].map(k => parseInt(b.slice(k, k + 2), 16));
+  return '#' + pa.map((v, k) => Math.round(v + (pb[k] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+const heatStroke = t => t < 0.5 ? lerpColor('#7C8DA0', '#FF8A00', t * 2) : lerpColor('#FF8A00', '#FFC93D', (t - 0.5) * 2);
+
+function buildSimScene() {
+  const cities = SCENARIO.cities.filter(c => SIM_XY[c.id]);
+  const hubs = cities.filter(c => c.hub);
+  const HEAT_STOPS = '<stop offset="0" stop-color="#FF2E1A"/><stop offset="0.55" stop-color="#FF8A00"/><stop offset="1" stop-color="#FFC93D"/>';
+  let defs = `<linearGradient id="heatV" x1="0" y1="1" x2="0" y2="0">${HEAT_STOPS}</linearGradient>` +
+    `<linearGradient id="heatH" x1="0" y1="0" x2="1" y2="0">${HEAT_STOPS}</linearGradient>`;
+  let routes = '', nodes = '';
+  for (const c of cities) {
+    const [cx, cy] = SIM_XY[c.id];
+    const dem = SIM.totalByCity[c.id] || 0;
+    const s = Math.max(c.hub ? 1.25 : 0.7, 0.55 + Math.sqrt(dem) / 26);
+    SIM_GEOM[c.id] = { cx, cy, s };
+    const pts = pentPts(cx, cy, s);
+    if (!c.hub && hubs.length) {
+      const near = hubs.reduce((best, h) => {
+        const [hx, hy] = SIM_XY[h.id];
+        const d = (hx - cx) ** 2 + (hy - cy) ** 2;
+        return !best || d < best.d ? { h, d } : best;
+      }, null).h;
+      const [hx, hy] = SIM_XY[near.id];
+      const mx = (cx + hx) / 2 + (hy - cy) * 0.12, my = (cy + hy) / 2 + (cx - hx) * 0.12;
+      routes += `<path class="route" data-route="${c.id}" d="M${cx},${cy} Q${mx.toFixed(0)},${my.toFixed(0)} ${hx},${hy}"/>`;
+    }
+    let ly;
+    if (c.hub) {
+      ly = cy + 20 * s + 20;
+      nodes += `<polygon points="${pts}" fill="#FC3F1D" opacity="0.92"/>` +
+        `<text x="${cx}" y="${cy + 3.5 * s}" text-anchor="middle" fill="#fff" font-size="${(9 * s).toFixed(1)}" font-weight="700" font-family="Inter,sans-serif" letter-spacing="1">ХАБ</text>` +
+        `<rect x="${cx - 20}" y="${(cy + 20 * s + 6).toFixed(1)}" width="40" height="4" rx="2" fill="#1A1D21"/>` +
+        `<rect data-hubbar="${c.id}" x="${cx - 20}" y="${(cy + 20 * s + 6).toFixed(1)}" width="0" height="4" rx="2" fill="url(#heatH)"/>`;
+    } else {
+      ly = cy + 20 * s + 13;
+      defs += `<clipPath id="clip-${c.id}"><polygon points="${pts}"/></clipPath>`;
+      nodes += `<polygon points="${pts}" fill="#1E2126"/>` +
+        `<rect data-fill="${c.id}" x="${(cx - 22 * s).toFixed(1)}" y="${(cy + 20 * s).toFixed(1)}" width="${(44 * s).toFixed(1)}" height="0" clip-path="url(#clip-${c.id})" fill="url(#heatV)" opacity="0.9"/>` +
+        `<polygon points="${pts}" fill="none" class="node-shape" data-nodestroke="${c.id}" stroke="#7C8DA0"/>`;
+    }
+    nodes += `<polygon points="${pentPts(cx, cy, s * 1.22)}" class="pulse-ring" data-pulse="${c.id}"/>` +
+      `<text x="${cx}" y="${ly}" text-anchor="middle" class="node-label">${esc(c.name)}</text>` +
+      `<text x="${cx}" y="${ly + 12}" text-anchor="middle" class="node-count" data-count="${c.id}"></text>`;
+  }
+  $('#simSvg').innerHTML = `<defs>${defs}</defs><path class="ru-contour" d="${RU_PATH}"/>${routes}${nodes}`;
+}
+
+function updateSimFrame(i) {
+  if (!SIM) return;
+  const hubAlert = SIM.hubQueueSeries[i] > SIM.hubCapDay;
+  let pool = 0;
+  Object.values(SIM.stockSeries).forEach(a => { pool += a[i]; });
+  for (const c of SCENARIO.cities) {
+    const g = SIM_GEOM[c.id];
+    if (!g) continue;
+    const dem = SIM.totalByCity[c.id] || 0;
+    const ds = SIM.doneSeries[c.id];
+    const done = ds ? ds[i] : 0;
+    const pct = dem > 0 ? done / dem : 0;
+    const cnt = document.querySelector(`[data-count="${c.id}"]`);
+    if (cnt) cnt.textContent = fmtI(done) + ' / ' + fmtI(dem);
+    if (c.hub) {
+      const bar = document.querySelector(`[data-hubbar="${c.id}"]`);
+      if (bar) bar.setAttribute('width', (40 * pct).toFixed(1));
+    } else {
+      const f = document.querySelector(`[data-fill="${c.id}"]`);
+      if (f) {
+        const h = 40 * g.s * pct;
+        f.setAttribute('height', h.toFixed(1));
+        f.setAttribute('y', (g.cy + 20 * g.s - h).toFixed(1));
+      }
+      const st = document.querySelector(`[data-nodestroke="${c.id}"]`);
+      if (st) st.setAttribute('stroke', heatStroke(pct));
+      const rt = document.querySelector(`[data-route="${c.id}"]`);
+      if (rt) rt.classList.toggle('active', done - (i > 0 && ds ? ds[i - 1] : 0) > 1e-6);
+    }
+    const pulse = document.querySelector(`[data-pulse="${c.id}"]`);
+    if (pulse) pulse.classList.toggle('on', c.hub ? hubAlert : !!(SIM.starvedSeries[c.id] && SIM.starvedSeries[c.id][i]));
+  }
+  const date = addDays(SIM.monday0, i);
+  const week = Math.floor((i - SIM.i0) / 7) + 1;
+  $('#simDate').textContent = RU_D(date) + ' · неделя ' + week;
+  const pctT = SIM.totalDemand > 0 ? SIM.doneCum[i] / SIM.totalDemand : 0;
+  $('#simReadout').innerHTML =
+    `<span>оснащено <b>${fmtI(SIM.doneCum[i])}</b> / ${fmtI(SIM.totalDemand)} · ${Math.round(pctT * 100)}%</span>` +
+    `<span>фонд регионов <b>${fmtI(pool)}</b> бамп.</span>` +
+    `<span${hubAlert ? ' class="alert"' : ''}>очередь хаба ${fmtI(SIM.hubQueueSeries[i])}</span>` +
+    (i > SIM.deadlineIdx ? '<span class="alert">после дедлайна</span>' : '');
+}
+
+function simStop() {
+  clearInterval(simTimer);
+  simTimer = null;
+  const b = $('#simPlay');
+  if (b) b.textContent = '▶ Play';
+}
+
+function renderSimulation() {
+  buildSimScene();
+  const scrub = $('#simScrub');
+  scrub.min = SIM.i0;
+  scrub.max = SIM.nDays - 1;
+  if (simDay == null || simDay < SIM.i0 || simDay > SIM.nDays - 1) simDay = SIM.i0;
+  scrub.value = simDay;
+  updateSimFrame(simDay);
+}
+
 /* ---------- вкладка Дашборд ---------- */
 const MONO_F = 'font-family="ui-monospace,monospace" font-size="10"';
 
@@ -430,6 +558,7 @@ function recalc() {
   renderRecs();
   renderQuotas();
   renderDashboard();
+  renderSimulation();
 }
 function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 150); }
 
@@ -497,6 +626,24 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab));
     document.querySelectorAll('.tabpane').forEach(x => x.classList.toggle('active', x.id === 'tab-' + tab.dataset.tab));
   }
+});
+
+/* ---------- плеер симуляции ---------- */
+$('#simPlay').addEventListener('click', () => {
+  if (simTimer) { simStop(); return; }
+  if (simDay >= SIM.nDays - 1) simDay = SIM.i0;
+  $('#simPlay').textContent = '❚❚ Пауза';
+  simTimer = setInterval(() => {
+    if (!SIM || simDay >= SIM.nDays - 1) { simStop(); return; }
+    simDay++;
+    $('#simScrub').value = simDay;
+    updateSimFrame(simDay);
+  }, 110);
+});
+$('#simScrub').addEventListener('input', e => {
+  simStop();
+  simDay = +e.target.value;
+  updateSimFrame(simDay);
 });
 
 /* ---------- экспорт / импорт / сброс ---------- */
