@@ -323,7 +323,7 @@ function runSim(sc) {
     doneCum, psw, pcw, campaignWeeks, weeksToDeadline,
     capBySvc, capByCity, cityStats, totalByCity, refLine,
     hubCapDay, hubPeak, hubAvg: hubDaysCnt ? hubSum / hubDaysCnt : 0,
-    hubQueuePeak, hubQueueEnd: hubQueue, hubQueueSeries,
+    hubQueuePeak, hubQueueEnd: hubQueue, hubQueueSeries, hubLoadSeries: hubLoad,
     stockSeries, queueSeries, starvedDays
   };
 }

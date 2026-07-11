@@ -52,6 +52,11 @@ step(() => {
   check('Выработка — в «Тонких настройках»', !!document.querySelector('#fineBox input[data-bind="process.efficiency"]'));
   check('Таблицы китов больше нет', !document.getElementById('kitsBox'));
   check('Легенда «вводные/расчёт» есть', !!document.querySelector('.io-legend'));
+  check('Дашборд: карточки городов', document.querySelectorAll('#dashCities .citycard').length === 14,
+    document.querySelectorAll('#dashCities .citycard').length);
+  check('Дашборд: темп vs мощность', document.querySelectorAll('#dashPace .pace-row').length === 14);
+  check('Дашборд: Gantt сервисов', document.querySelectorAll('#dashGantt td').length > 100);
+  check('Дашборд: графики хабов и фонда (SVG)', !!document.querySelector('#dashHub svg') && !!document.querySelector('#dashPool svg'));
 });
 
 /* ---------- 2. живой пересчёт: правим парк Москвы ---------- */

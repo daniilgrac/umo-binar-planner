@@ -306,6 +306,117 @@ function renderQuotas() {
   $('#quotaBox').innerHTML = `<table>${head}${body}</table>`;
 }
 
+/* ---------- вкладка Дашборд ---------- */
+const MONO_F = 'font-family="ui-monospace,monospace" font-size="10"';
+
+function svgTimeChart(opts) {
+  const W = 960, H = opts.h || 190, L = 46, R = 10, T = 12, B = 26;
+  const iw = W - L - R, ih = H - T - B;
+  const i0 = SIM.i0, n = SIM.nDays;
+  let yMax = opts.yCap || 0;
+  opts.series.forEach(s => { for (let i = i0; i < n; i++) if (s.data[i] > yMax) yMax = s.data[i]; });
+  yMax = Math.max(1, yMax * 1.12);
+  const x = i => L + (i - i0) / (n - 1 - i0) * iw;
+  const y = v => T + ih - v / yMax * ih;
+  let g = '';
+  SIM.campaignWeeks.forEach((wk, k) => {
+    const i = wk.w * 7;
+    if (i < i0) return;
+    g += `<line x1="${x(i).toFixed(1)}" y1="${T}" x2="${x(i).toFixed(1)}" y2="${T + ih}" stroke="#1C1F24"/>`;
+    if (k % 2 === 0) g += `<text x="${x(i).toFixed(1)}" y="${H - 8}" fill="#6A7078" ${MONO_F} text-anchor="middle">${wk.label.split('–')[0]}</text>`;
+  });
+  [0, yMax / 2, yMax].forEach(v => {
+    g += `<line x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}" stroke="#1C1F24"/>` +
+      `<text x="${L - 6}" y="${(y(v) + 3).toFixed(1)}" fill="#6A7078" ${MONO_F} text-anchor="end">${Math.round(v)}</text>`;
+  });
+  const dx = x(Math.min(SIM.deadlineIdx, n - 1)).toFixed(1);
+  g += `<line x1="${dx}" y1="${T}" x2="${dx}" y2="${T + ih}" stroke="#3A3F46" stroke-dasharray="2 3"/>` +
+    `<text x="${+dx + 4}" y="${T + 10}" fill="#8A9099" ${MONO_F}>дедлайн</text>`;
+  if (opts.yCap) {
+    g += `<line x1="${L}" y1="${y(opts.yCap).toFixed(1)}" x2="${W - R}" y2="${y(opts.yCap).toFixed(1)}" stroke="#3A3F46" stroke-dasharray="5 4"/>`;
+    if (opts.yCapLabel) g += `<text x="${W - R}" y="${(y(opts.yCap) - 5).toFixed(1)}" fill="#8A9099" ${MONO_F} text-anchor="end">${opts.yCapLabel}</text>`;
+  }
+  for (const s of opts.series) {
+    let pts = '';
+    for (let i = i0; i < n; i++) pts += (pts ? ' ' : '') + x(i).toFixed(1) + ',' + y(s.data[i]).toFixed(1);
+    if (s.fill) g += `<polygon points="${x(i0).toFixed(1)},${y(0).toFixed(1)} ${pts} ${x(n - 1).toFixed(1)},${y(0).toFixed(1)}" fill="${s.fill}"/>`;
+    g += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="1.6"/>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${g}</svg>`;
+}
+
+function renderDashCities() {
+  $('#dashCities').innerHTML = SCENARIO.cities.map(c => {
+    const cs = SIM.cityStats[c.id];
+    if (cs.demand <= 0) return '';
+    const pct = cs.doneByDeadline / cs.demand;
+    return `<div class="citycard">
+      <div class="cc-head"><span class="dot ${cityStatusClass(cs)}"></span><b>${esc(c.name)}</b>${c.hub ? '<span class="hub-tag">ХАБ</span>' : ''}<span class="cc-pct">${Math.round(pct * 100)}%</span></div>
+      <div class="heat mini"><div class="heat-fill" style="width:${(pct * 100).toFixed(1)}%"></div></div>
+      <div class="cc-meta">${fmtI(cs.doneByDeadline)} из ${fmtI(cs.demand)} к дедлайну${cs.starvedDays > 5 ? ` · <span style="color:var(--action)">${cs.starvedDays} дн без бамперов</span>` : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashPace() {
+  const cities = SCENARIO.cities.filter(c => SIM.cityStats[c.id].demand > 0);
+  const m = Math.max(1, ...cities.map(c => Math.max(SIM.cityStats[c.id].needWeekly, SIM.cityStats[c.id].capWeekly)));
+  $('#dashPace').innerHTML = cities.map(c => {
+    const cs = SIM.cityStats[c.id];
+    const def = cs.capWeekly < cs.needWeekly - 0.5;
+    return `<div class="pace-row">
+      <span class="pace-name">${esc(c.name)}</span>
+      <div class="pace-bars">
+        <div class="pace-bar need" style="width:${(cs.needWeekly / m * 100).toFixed(1)}%"></div>
+        <div class="pace-bar cap${def ? ' def' : ''}" style="width:${(cs.capWeekly / m * 100).toFixed(1)}%"></div>
+      </div>
+      <span class="pace-vals">надо ${fmt1(cs.needWeekly)} · есть ${fmt1(cs.capWeekly)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderDashGantt() {
+  const weeks = SIM.campaignWeeks;
+  const head = `<thead><tr><th>Сервис</th>${weeks.map(w => `<th>${w.label}</th>`).join('')}</tr></thead>`;
+  let body = '';
+  SCENARIO.cities.forEach(c => {
+    const list = SCENARIO.services.filter(s => s.cityId === c.id);
+    if (!list.length) return;
+    body += `<tr class="cityrow"><td colspan="${weeks.length + 1}">${esc(c.name)}</td></tr>`;
+    list.forEach(s => {
+      const sw = SIM.psw[s.id] || [];
+      const wcap = SIM.capBySvc[s.id].perWeek || 1;
+      body += `<tr><td class="t" style="padding-left:22px">${esc(s.name)}</td>` + weeks.map(wk => {
+        const v = sw[wk.w] || 0;
+        const u = Math.min(1, v / wcap);
+        const bg = v > 0.5 ? ` style="background:rgba(255,138,0,${(0.10 + 0.5 * u).toFixed(2)})"` : '';
+        return `<td${bg}>${Math.round(v) || '·'}</td>`;
+      }).join('') + '</tr>';
+    });
+  });
+  $('#dashGantt').innerHTML = `<table class="gantt">${head}<tbody>${body}</tbody></table>`;
+}
+
+function renderDashboard() {
+  renderDashCities();
+  renderDashPace();
+  renderDashGantt();
+  const capOk = isFinite(SIM.hubCapDay);
+  $('#dashHub').innerHTML = svgTimeChart({
+    yCap: capOk ? SIM.hubCapDay : 0,
+    yCapLabel: capOk ? 'мощность ' + fmt1(SIM.hubCapDay) : '',
+    series: [
+      { data: SIM.hubLoadSeries, color: 'var(--mid)', fill: 'rgba(255,138,0,.16)' },
+      { data: SIM.hubQueueSeries, color: 'var(--action)' }
+    ]
+  });
+  const pool = new Float64Array(SIM.nDays);
+  Object.values(SIM.stockSeries).forEach(a => { for (let i = 0; i < SIM.nDays; i++) pool[i] += a[i]; });
+  $('#dashPool').innerHTML = svgTimeChart({
+    series: [{ data: pool, color: 'var(--cold)', fill: 'rgba(124,141,160,.14)' }]
+  });
+}
+
 /* ---------- пересчёт ---------- */
 let recalcTimer = null;
 function recalc() {
@@ -318,6 +429,7 @@ function recalc() {
   updateVerify();
   renderRecs();
   renderQuotas();
+  renderDashboard();
 }
 function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 150); }
 
