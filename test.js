@@ -20,7 +20,7 @@ check('Нормо-часы на машину ≈ 12,5', Math.abs(req.mh - 12.5) 
 check('Подъемное время ≈ 2,83 ч', Math.abs(req.lift - 170 / 60) < 0.01, req.lift.toFixed(3));
 
 /* ---------- 2. Референсная линия ---------- */
-const refLine = { posts: 2, lifts: 1, mechanics: 5, shiftHours: 8, shifts: 1 };
+const refLine = { posts: 2, lifts: 1, mechanics: 5, shiftHours: 8 };
 const cap = E.capacityOf(sc, refLine, 1);
 check('Референсная линия ≈ 2,4 маш/день', Math.abs(cap.cap - 2.4) < 0.01, cap.cap.toFixed(3));
 check('Узкое место референсной линии — подъемники', cap.binding === 'подъемники', cap.binding);
@@ -70,7 +70,19 @@ check('Региональный парк ≈ 900 машин', Math.abs(nonHubDem
 check('Брак 10% съедает ~90 бамперов (больше фонда 50)', scrapLoss > sc.bumpers.initialPool,
   scrapLoss.toFixed(0) + ' шт при фонде ' + sc.bumpers.initialPool);
 
-/* ---------- 6. Мск и СПб впритык ---------- */
+/* ---------- 6. Мощность хабов — реальное ограничение ---------- */
+check('Хабы по умолчанию: 10 постов → 40 бамп/день', Math.abs(r50.hubCapDay - 40) < 0.01, r50.hubCapDay.toFixed(1));
+check('Дефолтных постов хватает: пик очереди хаба мал', r350.hubQueuePeak < 30, r350.hubQueuePeak.toFixed(0) + ' шт');
+
+const scHub = clone(E.DEFAULT_SCENARIO);
+scHub.bumpers.initialPool = 350;
+scHub.bumpers.hubPosts = 6;
+const rHub = E.runSim(scHub);
+const pctHub = rHub.doneByDeadline / rHub.totalDemand;
+check('6 постов при фонде 350: хаб душит кампанию (< 85%)', pctHub < 0.85, (pctHub * 100).toFixed(1) + '%');
+check('6 постов: большая очередь бамперов на хабе (> 200)', rHub.hubQueuePeak > 200, rHub.hubQueuePeak.toFixed(0) + ' шт');
+
+/* ---------- 7. Мск и СПб впритык ---------- */
 const spb = r50.cityStats['spb'];
 check('СПб: мощность ≈ 84 маш/нед', Math.abs(spb.capWeekly - 84) < 1, spb.capWeekly.toFixed(1));
 check('СПб: потребность ≈ 87,5 маш/нед', Math.abs(spb.needWeekly - 87.5) < 1, spb.needWeekly.toFixed(1));

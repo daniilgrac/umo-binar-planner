@@ -46,6 +46,12 @@ step(() => {
   check('Рекомендации на «Плане» есть', document.querySelectorAll('#recsBox .rec').length > 0);
   check('Квоты по неделям есть', document.querySelectorAll('#quotaBox td').length > 0);
   check('Проверка расчёта заполнена', txt('#verifyBox').includes('маш/день'));
+  check('Календарь: редактируем только дедлайн', !!document.querySelector('input[data-bind="calendar.deadline"]') &&
+    document.querySelectorAll('#calBox input').length === 1);
+  check('Поле «постов на хабах» есть', !!document.querySelector('input[data-bind="bumpers.hubPosts"]'));
+  check('Выработка — в «Тонких настройках»', !!document.querySelector('#fineBox input[data-bind="process.efficiency"]'));
+  check('Таблицы китов больше нет', !document.getElementById('kitsBox'));
+  check('Легенда «вводные/расчёт» есть', !!document.querySelector('.io-legend'));
 });
 
 /* ---------- 2. живой пересчёт: правим парк Москвы ---------- */

@@ -23,11 +23,10 @@ function renderCalendar() {
   const c = SCENARIO.calendar;
   $('#calBox').innerHTML = `
     <div class="frow">
-      <div class="f"><label>Старт кампании</label><input type="date" data-bind="calendar.simStart" value="${c.simStart}"></div>
-      <div class="f"><label>Дедлайн</label><input type="date" data-bind="calendar.deadline" value="${c.deadline}"></div>
-      <div class="f"><label>Горизонт симуляции</label><input type="date" data-bind="calendar.simEnd" value="${c.simEnd}"></div>
-      <div class="f"><label>Праздники (через запятую)</label><input type="text" data-bind="calendar.holidays" value="${esc((c.holidays || []).join(', '))}" style="width:220px;font-family:var(--mono)"></div>
-    </div>`;
+      <div class="f"><label>Старт кампании</label><div class="fixed">01.09.2026 · зафиксирован</div></div>
+      <div class="f"><label>Дедлайн — успеть к дате</label><input type="date" data-bind="calendar.deadline" value="${c.deadline}"></div>
+    </div>
+    <div class="note">Старт зашит: под него свёрстан график поставок машин. Единственный рычаг здесь — дедлайн. Горизонт симуляции — дедлайн + 6 недель, праздник 4 ноября учтён автоматически.</div>`;
 }
 
 function renderDemand() {
@@ -66,27 +65,33 @@ function renderProcess() {
       <tbody>${rows}</tbody>
       <tfoot><tr><td class="t" style="color:var(--text2)">Итого на машину</td><td></td><td></td><td></td><td></td><td class="sum" id="procTotal"></td></tr></tfoot>
     </table></div>
+    <div class="note">Выработка сервисов и кривая обучения — в «Тонких настройках» ниже.</div>`;
+}
+
+function renderFine() {
+  const p = SCENARIO.process;
+  $('#fineBox').innerHTML = `
     <div class="frow">
       <div class="f"><label>Выработка сервисов, %</label><input type="number" min="10" max="120" data-bind="process.efficiency" value="${p.efficiency}"></div>
       <div class="f"><label>Кривая обучения: первые N машин</label><input type="number" min="0" data-bind="process.learnFirstN" value="${p.learnFirstN}"></div>
       <div class="f"><label>Коэффициент обучения, ×</label><input type="number" min="1" step="0.1" data-bind="process.learnFactor" value="${p.learnFactor}"></div>
     </div>
-    <div class="note">Выработка растягивает и человеко-часы, и занятость постов/подъемников: работа медленнее нормы держит ресурс дольше.</div>`;
+    <div class="note">Выработка растягивает и человеко-часы, и занятость постов/подъемников: работа медленнее нормы держит ресурс дольше. Первые N машин каждый сервис работает в K раз медленнее — разгон команды.</div>`;
 }
 
 function renderBumpers() {
   const b = SCENARIO.bumpers;
   $('#bumpBox').innerHTML = `
     <div class="frow">
+      <div class="f"><label>Стартовый обменный фонд, шт</label><input type="number" min="0" data-bind="bumpers.initialPool" value="${b.initialPool}"></div>
+      <div class="f"><label>Постов на хабах Мск+СПб, шт</label><input type="number" min="0" data-bind="bumpers.hubPosts" value="${b.hubPosts}"></div>
       <div class="f"><label>Подготовка бампера, нч</label><input type="number" min="0" step="0.5" data-bind="bumpers.prepManHours" value="${b.prepManHours}"></div>
       <div class="f"><label>Отбраковка б/у бамперов, %</label><input type="number" min="0" max="100" data-bind="bumpers.scrapPct" value="${b.scrapPct}"></div>
-      <div class="f"><label>Стартовый обменный фонд, шт</label><input type="number" min="0" data-bind="bumpers.initialPool" value="${b.initialPool}"></div>
-      <div class="f"><label>Курьер в городе с хабом, ч</label><input type="number" min="0" data-bind="bumpers.localCourierHours" value="${b.localCourierHours}"></div>
       <div class="f"><label>Рабочих дней хаба в неделю</label><input type="number" min="1" max="7" data-bind="bumpers.hubWorkDays" value="${b.hubWorkDays}"></div>
       <div class="f"><label>Смена хаба, ч</label><input type="number" min="1" data-bind="bumpers.hubShiftHours" value="${b.hubShiftHours}"></div>
     </div>
     <div class="note" id="bumpHint" style="font-family:var(--mono)"></div>
-    <div class="note" style="margin-top:6px">Схема: в городах с хабом бампер снимается, режется в тот же день, монтаж — на следующий рабочий день. В остальных городах машина сразу получает подготовленный бампер из обменного фонда, а её родной уезжает в хаб, готовится и пополняет фонд. Стартовый фонд распределяется по городам пропорционально парку. Лючок вырезается из самого бампера — цветоподбор не требуется.</div>`;
+    <div class="note" style="margin-top:6px">Схема: в городах с хабом бампер снимается, режется в тот же день (в приоритете), монтаж — на следующий рабочий день. В остальных городах машина сразу получает подготовленный бампер из обменного фонда, а её родной уезжает в хаб, готовится в остаток мощности постов и пополняет фонд. Стартовый фонд распределяется по городам пропорционально парку. Лючок вырезается из самого бампера — цветоподбор не требуется.</div>`;
 }
 
 function svcRow(s) {
@@ -96,10 +101,8 @@ function svcRow(s) {
     <td><input type="number" min="0" data-sid="${s.id}" data-sf="lifts" value="${s.lifts}" style="width:50px"></td>
     <td><input type="number" min="0" data-sid="${s.id}" data-sf="mechanics" value="${s.mechanics}" style="width:50px"></td>
     <td><input type="number" min="1" max="7" data-sid="${s.id}" data-sf="daysPerWeek" value="${s.daysPerWeek}" style="width:50px"></td>
-    <td><input type="number" min="1" max="24" data-sid="${s.id}" data-sf="shiftHours" value="${s.shiftHours}" style="width:50px"></td>
-    <td><input type="number" min="1" max="3" data-sid="${s.id}" data-sf="shifts" value="${s.shifts}" style="width:44px"></td>
+    <td><input type="number" min="1" max="24" data-sid="${s.id}" data-sf="shiftHours" value="${s.shiftHours}" style="width:50px" title="Рабочих часов в день; вторая смена = 16"></td>
     <td><input type="date" data-sid="${s.id}" data-sf="readyDate" value="${s.readyDate}"></td>
-    <td><input type="number" min="0" data-sid="${s.id}" data-sf="yard" value="${s.yard}" style="width:50px" title="Мест ожидания для машин без бампера (города с хабом)"></td>
     <td class="svc-cap" data-svccap="${s.id}">—</td>
     <td><button class="del" data-del="${s.id}" title="Удалить сервис">×</button></td>
   </tr>`;
@@ -119,7 +122,7 @@ function renderServices() {
         <button class="btn mini" data-add="${c.id}" style="margin-left:auto">+ сервис</button>
       </div>
       ${list.length ? `<div class="tblwrap"><table style="width:100%">
-        <thead><tr><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Смена, ч</th><th>Смен</th><th>Готов с</th><th>Двор</th><th>Мощность</th><th></th></tr></thead>
+        <thead><tr><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Часов/день</th><th>Готов с</th><th>Мощность — расчёт</th><th></th></tr></thead>
         <tbody>${list.map(svcRow).join('')}</tbody>
       </table></div>` : '<div class="note" style="padding:10px 14px">Сервисов нет — машины этого города копятся в очереди.</div>'}
     </div>`;
@@ -145,11 +148,11 @@ function updateHeader() {
   $('#kpiTotal').textContent = fmtI(total);
   $('#kpiDoneL').textContent = 'Оснащено к ' + RU_D(dl).slice(0, 5);
   $('#kpiDone').innerHTML = `${fmtI(dbd)} <small>· ${Math.round(pct * 100)}%</small>`;
-  $('#kpiFinish').textContent = SIM.finishDate ? RU_D(SIM.finishDate) : 'после ' + RU_D(parseD(SCENARIO.calendar.simEnd));
+  $('#kpiFinish').textContent = SIM.finishDate ? RU_D(SIM.finishDate) : 'после ' + RU_D(SIM.simEndDate);
   const needW = total / SIM.weeksToDeadline;
   const haveW = Object.values(SIM.capBySvc).reduce((a, x) => a + x.perWeek, 0);
   $('#kpiRate').innerHTML = `${fmtI(needW)} / <span style="color:${haveW >= needW ? 'var(--warm)' : 'var(--action)'}">${fmtI(haveW)}</span>`;
-  $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>· средн. ${fmt1(SIM.hubAvg)}</small>`;
+  $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>/ ${fmt1(SIM.hubCapDay)}${SIM.hubQueuePeak > SIM.hubCapDay ? ' · <span style="color:var(--action)">очередь ' + fmtI(SIM.hubQueuePeak) + '</span>' : ''}</small>`;
   $('#heatFill').style.width = (pct * 100).toFixed(1) + '%';
   $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)}: <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
   $('#heatPct').textContent = Math.round(pct * 100) + '%';
@@ -164,9 +167,10 @@ function updateHeader() {
   $('#hintCal').textContent = SIM.weeksToDeadline.toFixed(1).replace('.', ',') + ' нед кампании';
   $('#hintDemand').textContent = fmtI(total) + ' машин';
   $('#hintSvc').textContent = SCENARIO.services.length + ' линий · ' + fmtI(haveW) + ' маш/нед';
-  $('#hintBump').textContent = 'фонд ' + fmtI(SCENARIO.bumpers.initialPool) + ' шт';
+  $('#hintBump').textContent = 'фонд ' + fmtI(SCENARIO.bumpers.initialPool) + ' шт · ' + fmt1(SIM.hubCapDay) + ' бамп/день';
   const req = perCarReq(SCENARIO);
   $('#hintProc').textContent = fmt1(req.mh) + ' нч/машину';
+  $('#hintFine').textContent = SCENARIO.process.efficiency + '% · обучение ×' + SCENARIO.process.learnFactor;
 }
 
 function updateDemandTotals() {
@@ -215,12 +219,12 @@ function updateServiceCaps() {
 }
 
 function updateBumperHints() {
-  const b = SCENARIO.bumpers;
-  const eff = SCENARIO.process.efficiency / 100;
-  const posts = Math.ceil(SIM.hubPeak * b.prepManHours / (b.hubShiftHours * eff || 1));
+  const backlog = SIM.hubQueuePeak > SIM.hubCapDay
+    ? ` Пиковая очередь на подготовку: <span style="color:var(--action)">${fmtI(SIM.hubQueuePeak)}</span> бамперов — постов не хватает.`
+    : ` Пиковая очередь на подготовку ${fmtI(SIM.hubQueuePeak)} шт — в пределах дневной мощности, постов хватает.`;
   $('#bumpHint').innerHTML =
-    `Расчёт по прогону: пик хабов <span style="color:var(--warm)">${fmt1(SIM.hubPeak)}</span> бамперов/день, средняя ${fmt1(SIM.hubAvg)}. ` +
-    `Под пик нужно ~<span style="color:var(--warm)">${posts}</span> постов оснастки (стапель + лазер + сварка) и столько же человек при смене ${b.hubShiftHours} ч.`;
+    `Мощность хабов: <span style="color:var(--warm)">${fmt1(SIM.hubCapDay)}</span> бамперов/день (посты × смена ÷ норма). ` +
+    `Фактический пик по прогону: <span style="color:var(--warm)">${fmt1(SIM.hubPeak)}</span>/день, средняя ${fmt1(SIM.hubAvg)}.` + backlog;
 }
 
 function updateVerify() {
@@ -231,7 +235,7 @@ function updateVerify() {
   const d = capacityOf(SCENARIO, s, 1);
   const dl = capacityOf(SCENARIO, s, SCENARIO.process.learnFactor);
   const eff = SCENARIO.process.efficiency / 100;
-  const H = s.shiftHours * s.shifts;
+  const H = s.shiftHours;
   const p = SCENARIO.process;
   const opsLine = p.ops.map(op => `${esc(op.name.split('·')[0].trim())} ${fmt2(op.wallMin / 60 * op.mechanics)}`).join(' + ');
   const mark = k => d.binding === k ? ' <span class="bind">← узкое место</span>' : '';
@@ -267,6 +271,9 @@ function renderRecs() {
       recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: ${cs.starvedDays} дн простоя из-за отсутствия подготовленных бамперов — увеличьте стартовый фонд или ускорьте логистику (${c.transitDays} дн в одну сторону).` });
     }
   });
+  if (SIM.hubQueuePeak > SIM.hubCapDay) {
+    recs.push({ cls: 'crit', html: `<b>Хабы Мск/СПб</b>: не успевают готовить бампера — пиковая очередь ${fmtI(SIM.hubQueuePeak)} шт при мощности ${fmt1(SIM.hubCapDay)}/день. Добавьте посты оснастки (сейчас ${SCENARIO.bumpers.hubPosts}) или удлините смену хаба.` });
+  }
   const scrap = +SCENARIO.bumpers.scrapPct || 0;
   const nonHubDemand = SCENARIO.cities.filter(c => !c.hub).reduce((a, c) => a + c.demand.reduce((x, y) => x + (+y || 0), 0), 0);
   if (scrap > 0 && nonHubDemand > 0) {
@@ -299,24 +306,6 @@ function renderQuotas() {
   $('#quotaBox').innerHTML = `<table>${head}${body}</table>`;
 }
 
-function renderKits() {
-  const weeks = SIM.campaignWeeks;
-  const safety = +SCENARIO.kits.safetyStockCars || 0;
-  let body = '';
-  const totW = new Float64Array(weeks.length);
-  SCENARIO.cities.forEach(c => {
-    const cw = SIM.pcw[c.id] || new Float64Array(0);
-    const csum = weeks.reduce((a, w) => a + (cw[w.w] || 0), 0);
-    if (csum < 0.5) return;
-    body += `<tr><td class="t">${esc(c.name)}</td>` +
-      weeks.map((w, i) => { const v = Math.round(cw[w.w] || 0); totW[i] += cw[w.w] || 0; return `<td class="${v ? 'qv' : 'q0'}">${v || '·'}</td>`; }).join('') +
-      `<td class="sum">${fmtI(csum)}</td></tr>`;
-  });
-  const foot = `<tr><td class="t" style="color:var(--text2)">Итого/нед</td>${weeks.map((w, i) => `<td class="sum">${fmtI(totW[i])}</td>`).join('')}<td class="sum">${fmtI(totW.reduce((a, b) => a + b, 0))}</td></tr>`;
-  $('#kitsBox').innerHTML = `<table><thead><tr><th>Город</th>${weeks.map(w => `<th>${w.label}</th>`).join('')}<th>Σ</th></tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
-  $('#kitsNote').textContent = `Кит должен лежать на складе сервиса к началу недели установки. Дополнительно к первой неделе — страховой запас ${safety} китов на каждый активный город.`;
-}
-
 /* ---------- пересчёт ---------- */
 let recalcTimer = null;
 function recalc() {
@@ -329,7 +318,6 @@ function recalc() {
   updateVerify();
   renderRecs();
   renderQuotas();
-  renderKits();
 }
 function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 150); }
 
@@ -337,8 +325,7 @@ function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(reca
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.bind) {
-    let v = t.type === 'number' ? (+t.value || 0) : t.value;
-    if (t.dataset.bind === 'calendar.holidays') v = t.value.split(',').map(s => s.trim()).filter(Boolean);
+    const v = t.type === 'number' ? (+t.value || 0) : t.value;
     setPath(SCENARIO, t.dataset.bind, v);
     recalcSoon();
   } else if (t.dataset.city) {
@@ -381,8 +368,8 @@ document.addEventListener('click', e => {
     SCENARIO.services.push({
       id: 's' + Date.now() + Math.floor(Math.random() * 1000),
       cityId, name: 'Сервис ' + n,
-      posts: 2, lifts: 1, mechanics: 5, daysPerWeek: 5, shiftHours: 8, shifts: 1,
-      readyDate: SCENARIO.calendar.simStart, yard: 10
+      posts: 2, lifts: 1, mechanics: 5, daysPerWeek: 5, shiftHours: 8,
+      readyDate: SCENARIO.calendar.simStart
     });
     renderServices(); renderVerifySelect(); recalc();
     return;
@@ -438,6 +425,7 @@ function renderAll() {
   renderCalendar();
   renderDemand();
   renderProcess();
+  renderFine();
   renderBumpers();
   renderServices();
   renderVerifySelect();
