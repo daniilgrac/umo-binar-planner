@@ -140,6 +140,36 @@ td.q0{color:#3A3F46} td.qv{color:var(--text)}
 tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:Inter,sans-serif;text-align:left}
 .legend{font-size:12px;color:var(--text2);margin-top:8px}
 
+/* ---------- сценарии и статусы партнёров ---------- */
+.scen{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg button{background:var(--panel2);border:none;color:var(--text2);padding:6px 13px;font-size:12.5px;font-weight:500}
+.seg button+button{border-left:1px solid var(--border)}
+.seg button.active{background:var(--action);color:#fff;font-weight:600}
+.st-dot{display:inline-block;width:9px;height:9px;border-radius:2px;transform:rotate(45deg);margin-right:7px;vertical-align:0}
+.st-dot.st-active{background:var(--warm)}
+.st-dot.st-talks{background:var(--cold)}
+.st-dot.st-search{background:none;border:1.5px dashed var(--action)}
+select.status-sel{font-size:12px;padding:3px 6px}
+select.status-sel.st-active{color:var(--warm);border-color:rgba(255,201,61,.4)}
+select.status-sel.st-talks{color:var(--coldtext,#9FB0C2)}
+select.status-sel.st-search{color:#FF6B4D;border-style:dashed;border-color:rgba(252,63,29,.55)}
+tr.row-search td{background:rgba(252,63,29,.05)}
+tr.row-talks td{background:rgba(124,141,160,.05)}
+.latest{font-family:var(--mono);font-size:12px;color:var(--mid)}
+.latest.crit{color:var(--action)}
+.city-rec{font-size:12px;color:#FF6B4D}
+
+/* ---------- лента событий ---------- */
+.sim-layout{display:grid;grid-template-columns:320px 1fr;gap:18px;max-width:1500px;align-items:start}
+@media (max-width:1000px){.sim-layout{grid-template-columns:1fr}}
+.ev-list{display:flex;flex-direction:column;gap:6px;max-height:560px;overflow-y:auto;padding-right:4px}
+.ev{display:flex;gap:9px;align-items:flex-start;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cold);border-radius:6px;padding:7px 10px;font-size:12.5px;cursor:pointer;text-align:left;color:var(--text)}
+.ev:hover{background:var(--panel2)}
+.ev.crit{border-left-color:var(--action)} .ev.warn{border-left-color:var(--mid)} .ev.good{border-left-color:var(--warm)}
+.ev .ev-d{font-family:var(--mono);color:var(--text2);flex:none;padding-top:1px}
+.ev.sel{border-color:var(--mid)}
+
 /* ---------- симуляция ---------- */
 .sim-controls{display:flex;gap:14px;align-items:center;margin-bottom:10px;max-width:1100px}
 .sim-controls input[type=range]{flex:1;accent-color:var(--action);background:transparent;border:none;padding:0}
@@ -203,7 +233,14 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
         <path fill-rule="evenodd" clip-rule="evenodd" d="M244.187 0C257.558 0 264 5.53719 264 19.144V33.8555C264 47.4558 257.565 53 244.187 53H205.944C192.573 53 186.131 47.4623 186.131 33.8555V19.144C186.131 5.54424 192.573 0 205.944 0H244.187ZM205.944 33.8555H244.187V19.144H205.944V33.8555Z"/>
       </svg>
       <span class="badge">Бинар · осень 2026</span></div>
-    <div id="statusChip" class="chip fail"><span>—</span></div>
+    <div class="scen">
+      <div class="seg" id="viewSeg" title="Какой сценарий показывают все вкладки">
+        <button data-view="fact">Факт</button>
+        <button data-view="plan" class="active">С планом поиска</button>
+      </div>
+      <div id="chipFact" class="chip fail"><span>—</span></div>
+      <div id="chipPlan" class="chip fail"><span>—</span></div>
+    </div>
   </div>
   <div class="heat"><div class="heat-fill" id="heatFill"></div></div>
   <div class="heat-cap"><span id="heatLabel">—</span><span id="heatPct">—</span></div>
@@ -218,9 +255,9 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
 
 <nav class="tabs">
   <button class="tab active" data-tab="inputs">Вводные</button>
-  <button class="tab" data-tab="sim">Симуляция</button>
+  <button class="tab" data-tab="partners">Партнёры и план</button>
   <button class="tab" data-tab="dash">Дашборд</button>
-  <button class="tab" data-tab="plan">План</button>
+  <button class="tab" data-tab="sim">Симуляция</button>
 </nav>
 
 <main>
@@ -265,12 +302,6 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
     <div class="sec-body" id="bumpBox"></div>
   </details>
 
-  <details class="sec" open>
-    <summary><span class="sec-t">5 · Сервисы по городам</span><span class="sec-hint" id="hintSvc"></span>
-      <span class="sec-why">Главный рычаг. Сколько линий, постов, подъемников и людей в каждом городе — ответ «сколько сервисов нужно» подбирается здесь.</span></summary>
-    <div class="sec-body" id="svcBox"></div>
-  </details>
-
   <details class="sec">
     <summary><span class="sec-t">Тонкие настройки</span><span class="sec-hint" id="hintFine"></span>
       <span class="sec-why">Выработка и кривая обучения. Обычно не трогаем.</span></summary>
@@ -288,14 +319,23 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
 </section>
 
 <section id="tab-sim" class="tabpane">
-  <div class="sim-controls">
-    <button class="btn primary" id="simPlay">▶ Play</button>
-    <input type="range" id="simScrub" min="0" max="1" value="0" step="1">
-    <span class="sim-date" id="simDate">—</span>
+  <div class="sim-layout">
+    <div class="sim-events">
+      <h3 class="pt" style="margin-top:0">Критические события</h3>
+      <div class="ev-list" id="evList"></div>
+      <div class="legend">Модель сама находит дни, когда план ломается. Клик по событию — карта прыгает к этому дню.</div>
+    </div>
+    <div class="sim-main">
+      <div class="sim-controls">
+        <button class="btn primary" id="simPlay">▶ Play</button>
+        <input type="range" id="simScrub" min="0" max="1" value="0" step="1">
+        <span class="sim-date" id="simDate">—</span>
+      </div>
+      <div class="sim-readout" id="simReadout"></div>
+      <div class="sim-map"><svg id="simSvg" viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      <div class="legend">Узлы наливаются тепловым градиентом по доле оснащённого парка на текущий день. Пунктирные топливопроводы — маршруты бамперов в хабы; линия оживает, когда город работает. Красный пульс — узкое место: город простаивает без бамперов или очередь хаба выше дневной мощности.</div>
+    </div>
   </div>
-  <div class="sim-readout" id="simReadout"></div>
-  <div class="sim-map"><svg id="simSvg" viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
-  <div class="legend">Узлы наливаются тепловым градиентом по доле оснащённого парка на текущий день. Пунктирные топливопроводы — маршруты бамперов в хабы; линия оживает, когда город работает. Красный пульс — узкое место: город простаивает без бамперов или очередь хаба выше дневной мощности. Скраббер — по дням, метки — понедельники недель.</div>
 </section>
 
 <section id="tab-dash" class="tabpane">
@@ -319,12 +359,26 @@ tr.cityrow td{background:#181B20;color:var(--warm);font-weight:600;font-family:I
   <div class="legend">Суммарный запас подготовленных бамперов по всем городам без хаба. Провалы к нулю — «голодание»: машины есть, ставить нечего.</div>
 </section>
 
-<section id="tab-plan" class="tabpane">
-  <h3 class="pt" style="margin-top:0">Рекомендации модели</h3>
+<section id="tab-partners" class="tabpane">
+  <div class="toolbar">
+    <button class="btn primary" id="btnXlsx">Выгрузить план (.xlsx)</button>
+    <span class="note">Реестр партнёров: что работает, что в переговорах и кого ещё искать. Дефициты считаются по сценарию «с планом поиска».</span>
+  </div>
+
+  <h3 class="pt" style="margin-top:0">Дефициты и рекомендации</h3>
   <div class="recs" id="recsBox"></div>
+
+  <h3 class="pt">Реестр партнёров по городам</h3>
+  <div class="io-legend">
+    <span><span class="st-dot st-active"></span>работает — договор есть</span>
+    <span><span class="st-dot st-talks"></span>в переговорах — считается в план</span>
+    <span><span class="st-dot st-search"></span>надо найти — позиция для поиска</span>
+  </div>
+  <div id="svcBox"></div>
+
   <h3 class="pt">Недельные квоты по сервисам, машин</h3>
   <div class="tblwrap" id="quotaBox"></div>
-  <div class="legend">Квота — сколько машин должно приехать в сервис на неделе (результат прогона симуляции с учётом бамперного контура и кривой обучения). Колонка «хвост» — установки после дедлайна. Это же — график потребности в китах Бинар: кит должен лежать на складе сервиса к началу недели установки.</div>
+  <div class="legend">Квота — сколько машин должно приехать в сервис на неделе (по выбранному в шапке сценарию). Колонка «хвост» — установки после дедлайна. Это же — график потребности в китах Бинар: кит должен лежать на складе сервиса к началу недели установки.</div>
 </section>
 </main>
 

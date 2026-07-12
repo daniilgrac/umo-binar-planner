@@ -2,7 +2,12 @@
 /* ============ UI-СЛОЙ ============ */
 
 let SCENARIO = JSON.parse(JSON.stringify(DEFAULT_SCENARIO));
-let SIM = null;
+let SIM = null;        // прогон выбранного сценария (все вкладки читают его)
+let SIM_FACT = null;   // только работающие партнёры
+let SIM_PLAN = null;   // работающие + переговоры + поиск
+let EVENTS = [];
+let LATEST = {};       // sid → последняя дата старта (Date | null)
+let VIEW = 'plan';     // 'fact' | 'plan' — переключатель в шапке
 
 const $ = s => document.querySelector(s);
 const fmtI = n => Math.round(n).toLocaleString('ru-RU');
@@ -94,17 +99,24 @@ function renderBumpers() {
     <div class="note" style="margin-top:6px">Схема: в городах с хабом бампер снимается, режется в тот же день (в приоритете), монтаж — на следующий рабочий день. В остальных городах машина сразу получает подготовленный бампер из обменного фонда, а её родной уезжает в хаб, готовится в остаток мощности постов и пополняет фонд. Стартовый фонд распределяется по городам пропорционально парку. Лючок вырезается из самого бампера — цветоподбор не требуется.</div>`;
 }
 
+const ST_LABEL = { active: 'работает', talks: 'переговоры', search: 'найти' };
+
 function svcRow(s) {
-  return `<tr data-svcrow="${s.id}">
+  const st = svcStatus(s);
+  return `<tr data-svcrow="${s.id}" class="row-${st}">
+    <td><select class="status-sel st-${st}" data-sid="${s.id}" data-sf="status">
+      ${['active', 'talks', 'search'].map(k => `<option value="${k}"${k === st ? ' selected' : ''}>${ST_LABEL[k]}</option>`).join('')}
+    </select></td>
     <td class="t"><input type="text" class="sname" data-sid="${s.id}" data-sf="name" value="${esc(s.name)}"></td>
     <td><input type="number" min="0" data-sid="${s.id}" data-sf="posts" value="${s.posts}" style="width:50px"></td>
     <td><input type="number" min="0" data-sid="${s.id}" data-sf="lifts" value="${s.lifts}" style="width:50px"></td>
     <td><input type="number" min="0" data-sid="${s.id}" data-sf="mechanics" value="${s.mechanics}" style="width:50px"></td>
     <td><input type="number" min="1" max="7" data-sid="${s.id}" data-sf="daysPerWeek" value="${s.daysPerWeek}" style="width:50px"></td>
     <td><input type="number" min="1" max="24" data-sid="${s.id}" data-sf="shiftHours" value="${s.shiftHours}" style="width:50px" title="Рабочих часов в день; вторая смена = 16"></td>
-    <td><input type="date" data-sid="${s.id}" data-sf="readyDate" value="${s.readyDate}"></td>
+    <td><input type="date" data-sid="${s.id}" data-sf="readyDate" value="${s.readyDate}" title="Дата, с которой партнёр начинает ставить"></td>
     <td class="svc-cap" data-svccap="${s.id}">—</td>
-    <td><button class="del" data-del="${s.id}" title="Удалить сервис">×</button></td>
+    <td class="latest" data-latest="${s.id}"></td>
+    <td><button class="del" data-del="${s.id}" title="Удалить партнёра">×</button></td>
   </tr>`;
 }
 
@@ -119,12 +131,14 @@ function renderServices() {
         <span class="city-name">${esc(c.name)}</span>
         ${c.hub ? '<span class="hub-tag">ХАБ</span>' : ''}
         <span class="city-meta" data-citymeta="${c.id}"></span>
-        <button class="btn mini" data-add="${c.id}" style="margin-left:auto">+ сервис</button>
+        <span class="city-rec" data-cityrec="${c.id}"></span>
+        <button class="btn mini" data-addsearch="${c.id}" data-n="1" hidden style="margin-left:auto">+ искомые</button>
+        <button class="btn mini" data-add="${c.id}">+ партнёр</button>
       </div>
       ${list.length ? `<div class="tblwrap"><table style="width:100%">
-        <thead><tr><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Часов/день</th><th>Готов с</th><th>Мощность — расчёт</th><th></th></tr></thead>
+        <thead><tr><th>Статус</th><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Часов/день</th><th>Готов с</th><th>Мощность — расчёт</th><th>Старт не позже</th><th></th></tr></thead>
         <tbody>${list.map(svcRow).join('')}</tbody>
-      </table></div>` : '<div class="note" style="padding:10px 14px">Сервисов нет — машины этого города копятся в очереди.</div>'}
+      </table></div>` : '<div class="note" style="padding:10px 14px">Партнёров нет — машины этого города копятся в очереди. Нажмите «+ искомые», чтобы модель создала позиции для поиска.</div>'}
     </div>`;
   }).join('');
 }
@@ -140,33 +154,38 @@ function renderVerifySelect() {
 }
 
 /* ---------- обновление расчётных значений ---------- */
+function chipInto(el, sim, label) {
+  const dl = parseD(SCENARIO.calendar.deadline);
+  const pct = sim.totalDemand > 0 ? sim.doneByDeadline / sim.totalDemand : 0;
+  const okFinish = sim.finishDate && sim.finishDate.getTime() <= dl.getTime();
+  let cls, txt;
+  if (okFinish) { cls = 'ok'; txt = 'успеваем'; }
+  else if (pct >= 0.9) { cls = 'risk'; txt = 'на грани · ' + Math.round(pct * 100) + '%'; }
+  else { cls = 'fail'; txt = 'не успеваем · ' + Math.round(pct * 100) + '%'; }
+  el.className = 'chip ' + cls;
+  el.innerHTML = '<span>' + label + ' · ' + txt + '</span>';
+}
+
 function updateHeader() {
   const total = SIM.totalDemand;
   const dbd = SIM.doneByDeadline;
   const pct = total > 0 ? dbd / total : 0;
   const dl = parseD(SCENARIO.calendar.deadline);
+  chipInto($('#chipFact'), SIM_FACT, 'Факт');
+  chipInto($('#chipPlan'), SIM_PLAN, 'С поиском');
   $('#kpiTotal').textContent = fmtI(total);
   $('#kpiDoneL').textContent = 'Оснащено к ' + RU_D(dl).slice(0, 5);
-  $('#kpiDone').innerHTML = `${fmtI(dbd)} <small>· ${Math.round(pct * 100)}%</small>`;
+  $('#kpiDone').innerHTML = `${fmtI(dbd)} <small>· ${Math.round(pct * 100)}% · факт ${fmtI(SIM_FACT.doneByDeadline)}</small>`;
   $('#kpiFinish').textContent = SIM.finishDate ? RU_D(SIM.finishDate) : 'после ' + RU_D(SIM.simEndDate);
   const needW = total / SIM.weeksToDeadline;
-  const haveW = Object.values(SIM.capBySvc).reduce((a, x) => a + x.perWeek, 0);
+  const haveW = Object.values(SIM.capByCity).reduce((a, b) => a + b, 0);
   $('#kpiRate').innerHTML = `${fmtI(needW)} / <span style="color:${haveW >= needW ? 'var(--warm)' : 'var(--action)'}">${fmtI(haveW)}</span>`;
   $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>/ ${fmt1(SIM.hubCapDay)}${SIM.hubQueuePeak > SIM.hubCapDay ? ' · <span style="color:var(--action)">очередь ' + fmtI(SIM.hubQueuePeak) + '</span>' : ''}</small>`;
   $('#heatFill').style.width = (pct * 100).toFixed(1) + '%';
-  $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)}: <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
+  $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)} (${VIEW === 'fact' ? 'факт' : 'с планом поиска'}): <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
   $('#heatPct').textContent = Math.round(pct * 100) + '%';
-  const chip = $('#statusChip');
-  const okFinish = SIM.finishDate && SIM.finishDate.getTime() <= dl.getTime();
-  let cls, txt;
-  if (okFinish) { cls = 'ok'; txt = 'Успеваем к ' + RU_D(dl).slice(0, 5); }
-  else if (pct >= 0.9) { cls = 'risk'; txt = 'На грани · ' + Math.round(pct * 100) + '% к дедлайну'; }
-  else { cls = 'fail'; txt = 'Не успеваем · ' + Math.round(pct * 100) + '% к дедлайну'; }
-  chip.className = 'chip ' + cls;
-  chip.innerHTML = '<span>' + txt + '</span>';
   $('#hintCal').textContent = SIM.weeksToDeadline.toFixed(1).replace('.', ',') + ' нед кампании';
   $('#hintDemand').textContent = fmtI(total) + ' машин';
-  $('#hintSvc').textContent = SCENARIO.services.length + ' линий · ' + fmtI(haveW) + ' маш/нед';
   $('#hintBump').textContent = 'фонд ' + fmtI(SCENARIO.bumpers.initialPool) + ' шт · ' + fmt1(SIM.hubCapDay) + ' бамп/день';
   const req = perCarReq(SCENARIO);
   $('#hintProc').textContent = fmt1(req.mh) + ' нч/машину';
@@ -204,17 +223,38 @@ function cityStatusClass(cs) {
 }
 
 function updateServiceCaps() {
+  // «старт не позже» — пробные прогоны для позиций поиска и переговоров
+  LATEST = {};
+  const probe = SCENARIO.services.filter(s => svcStatus(s) !== 'active').slice(0, 20);
+  probe.forEach(s => { LATEST[s.id] = latestStart(SCENARIO, s.id); });
+
   SCENARIO.services.forEach(s => {
     const cap = SIM.capBySvc[s.id];
     const cell = document.querySelector(`[data-svccap="${s.id}"]`);
     if (cell) cell.innerHTML = `<b>${fmt2(cap.perDay)}</b>/дн · <b>${fmt1(cap.perWeek)}</b>/нед · узкое: ${cap.binding}`;
+    const lc = document.querySelector(`[data-latest="${s.id}"]`);
+    if (lc) {
+      if (svcStatus(s) === 'active') { lc.textContent = ''; lc.className = 'latest'; }
+      else if (!(s.id in LATEST)) { lc.textContent = '—'; lc.className = 'latest'; }
+      else if (LATEST[s.id]) { lc.textContent = '≤ ' + RU_D(LATEST[s.id]); lc.className = 'latest'; }
+      else { lc.textContent = 'город не успевает'; lc.className = 'latest crit'; lc.title = 'Даже при старте с первого дня город не закрывается к дедлайну — нужен ещё партнёр или мощнее'; }
+    }
   });
+
   SCENARIO.cities.forEach(c => {
-    const cs = SIM.cityStats[c.id];
+    const csP = SIM_PLAN.cityStats[c.id];
+    const csF = SIM_FACT.cityStats[c.id];
     const meta = document.querySelector(`[data-citymeta="${c.id}"]`);
-    if (meta) meta.textContent = `парк ${fmtI(cs.demand)} · надо ${fmt1(cs.needWeekly)}/нед · мощность ${fmt1(cs.capWeekly)}/нед · к дедлайну ${fmtI(cs.doneByDeadline)}`;
+    if (meta) meta.textContent = `парк ${fmtI(csP.demand)} · надо ${fmt1(csP.needWeekly)}/нед · факт ${fmt1(csF.capWeekly)} · с планом ${fmt1(csP.capWeekly)}/нед`;
     const dot = document.querySelector(`[data-citydot="${c.id}"]`);
-    if (dot) dot.className = 'dot ' + cityStatusClass(cs);
+    if (dot) dot.className = 'dot ' + cityStatusClass(SIM.cityStats[c.id]);
+    // дефицит города считаем по полному плану: чего не хватает даже после закрытия поиска
+    const gap = csP.needWeekly - csP.capWeekly;
+    const lines = csP.demand > 0 && gap > 0.5 ? Math.max(1, Math.ceil(gap / SIM_PLAN.refLine)) : 0;
+    const rec = document.querySelector(`[data-cityrec="${c.id}"]`);
+    const btn = document.querySelector(`[data-addsearch="${c.id}"]`);
+    if (rec) rec.textContent = lines ? `дефицит ≈ ${lines} лин. (${fmt1(gap)} маш/нед)` : '';
+    if (btn) { btn.hidden = !lines; btn.dataset.n = lines || 1; btn.textContent = `+ искомые (${lines})`; }
   });
 }
 
@@ -249,30 +289,39 @@ function updateVerify() {
     `<span class="mut">Первые ${p.learnFirstN} машин — обучение ×${p.learnFactor}: ${fmt2(dl.cap)} маш/день</span>`;
 }
 
-/* ---------- вкладка План ---------- */
+/* ---------- вкладка Партнёры: дефициты и рекомендации ----------
+   Считаются по полному плану (SIM_PLAN): что не закрыто, даже если весь
+   поиск сработает. Плюс сводка «сколько ещё искать». */
 function renderRecs() {
   const recs = [];
-  const refW = SIM.refLine;
+  const refW = SIM_PLAN.refLine;
+  const searching = SCENARIO.services.filter(s => svcStatus(s) === 'search');
+  const talks = SCENARIO.services.filter(s => svcStatus(s) === 'talks');
+  if (searching.length || talks.length) {
+    const capS = searching.reduce((a, s) => a + SIM_PLAN.capBySvc[s.id].perWeek, 0);
+    const capT = talks.reduce((a, s) => a + SIM_PLAN.capBySvc[s.id].perWeek, 0);
+    recs.push({ cls: 'warn', html: `<b>Открытый поиск</b>: ${searching.length} позиций (${fmt1(capS)} маш/нед)${talks.length ? ` + ${talks.length} в переговорах (${fmt1(capT)} маш/нед)` : ''}. Пока они не закрыты договором, факт-сценарий даёт ${fmtI(SIM_FACT.doneByDeadline)} машин к дедлайну вместо ${fmtI(SIM_PLAN.doneByDeadline)}.` });
+  }
   SCENARIO.cities.forEach(c => {
-    const cs = SIM.cityStats[c.id];
+    const cs = SIM_PLAN.cityStats[c.id];
     if (cs.demand <= 0) return;
-    const services = SCENARIO.services.filter(s => s.cityId === c.id).length;
-    if (!services) {
-      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: нет ни одного сервиса — ${fmtI(cs.demand)} машин без плана. Нужно ~${Math.max(1, Math.ceil(cs.needWeekly / refW))} линий.` });
+    const cnt = SCENARIO.services.filter(s => s.cityId === c.id).length;
+    if (!cnt) {
+      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: партнёров нет вовсе — ${fmtI(cs.demand)} машин без плана. Нужно ~${Math.max(1, Math.ceil(cs.needWeekly / refW))} линий — нажмите «+ искомые» в реестре.` });
       return;
     }
     if (cs.capWeekly < cs.needWeekly - 0.5) {
       const add = Math.ceil((cs.needWeekly - cs.capWeekly) / refW);
-      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: мощность ${fmt1(cs.capWeekly)} маш/нед при потребности ${fmt1(cs.needWeekly)} — добавьте ~${add} лин. (реф. линия ≈ ${fmt1(refW)} маш/нед) или вторую смену / подъемник.` });
+      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: даже с планом поиска мощность ${fmt1(cs.capWeekly)} маш/нед при потребности ${fmt1(cs.needWeekly)} — добавьте ещё ~${add} позиций поиска (реф. линия ≈ ${fmt1(refW)} маш/нед) или вторую смену / подъемник.` });
     } else if (cs.leftAtDeadline > 0.5 && cs.starvedDays <= 5) {
-      recs.push({ cls: 'warn', html: `<b>${esc(c.name)}</b>: мощности хватает, но к дедлайну остаётся ${fmtI(cs.leftAtDeadline)} маш — съедают кривая обучения и разгон. Раньше дата готовности сервисов или запас мощности.` });
+      recs.push({ cls: 'warn', html: `<b>${esc(c.name)}</b>: мощности хватает, но к дедлайну остаётся ${fmtI(cs.leftAtDeadline)} маш — съедают кривая обучения и разгон. Раньше даты готовности партнёров или запас мощности.` });
     }
     if (cs.starvedDays > 5) {
       recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: ${cs.starvedDays} дн простоя из-за отсутствия подготовленных бамперов — увеличьте стартовый фонд или ускорьте логистику (${c.transitDays} дн в одну сторону).` });
     }
   });
-  if (SIM.hubQueuePeak > SIM.hubCapDay) {
-    recs.push({ cls: 'crit', html: `<b>Хабы Мск/СПб</b>: не успевают готовить бампера — пиковая очередь ${fmtI(SIM.hubQueuePeak)} шт при мощности ${fmt1(SIM.hubCapDay)}/день. Добавьте посты оснастки (сейчас ${SCENARIO.bumpers.hubPosts}) или удлините смену хаба.` });
+  if (SIM_PLAN.hubQueuePeak > SIM_PLAN.hubCapDay) {
+    recs.push({ cls: 'crit', html: `<b>Хабы Мск/СПб</b>: не успевают готовить бампера — пиковая очередь ${fmtI(SIM_PLAN.hubQueuePeak)} шт при мощности ${fmt1(SIM_PLAN.hubCapDay)}/день. Добавьте посты оснастки (сейчас ${SCENARIO.bumpers.hubPosts}) или удлините смену хаба.` });
   }
   const scrap = +SCENARIO.bumpers.scrapPct || 0;
   const nonHubDemand = SCENARIO.cities.filter(c => !c.hub).reduce((a, c) => a + c.demand.reduce((x, y) => x + (+y || 0), 0), 0);
@@ -281,6 +330,13 @@ function renderRecs() {
   }
   if (!recs.length) recs.push({ cls: 'good', html: 'Мощности, фонд бамперов и логистика сбалансированы — кампания завершается в срок.' });
   $('#recsBox').innerHTML = recs.map(r => `<div class="rec ${r.cls}"><div>${r.html}</div></div>`).join('');
+}
+
+/* ---------- лента критических событий ---------- */
+function renderEvents() {
+  $('#evList').innerHTML = EVENTS.length
+    ? EVENTS.map(e => `<button class="ev ${e.sev}" data-evday="${e.day}"><span class="ev-d">${e.date}</span><span>${esc(e.text)}</span></button>`).join('')
+    : '<div class="note">Событий нет — кампания идёт ровно.</div>';
 }
 
 function renderQuotas() {
@@ -548,7 +604,10 @@ function renderDashboard() {
 /* ---------- пересчёт ---------- */
 let recalcTimer = null;
 function recalc() {
-  SIM = runSim(SCENARIO);
+  SIM_PLAN = runSim(SCENARIO);
+  SIM_FACT = runSim(SCENARIO, { include: new Set(['active']) });
+  SIM = VIEW === 'fact' ? SIM_FACT : SIM_PLAN;
+  EVENTS = analyzeEvents(SCENARIO, SIM);
   updateHeader();
   updateDemandTotals();
   updateProcessTotals();
@@ -558,6 +617,7 @@ function recalc() {
   renderRecs();
   renderQuotas();
   renderDashboard();
+  renderEvents();
   renderSimulation();
 }
 function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 150); }
@@ -592,6 +652,11 @@ document.addEventListener('input', e => {
     const s = SCENARIO.services.find(x => x.id === t.dataset.sid);
     if (!s) return;
     const f = t.dataset.sf;
+    if (f === 'status') {
+      s.status = t.value;
+      renderServices(); renderVerifySelect(); recalc();
+      return;
+    }
     if (f === 'name' || f === 'readyDate') s[f] = t.value;
     else s[f] = Math.max(0, +t.value || 0);
     recalcSoon();
@@ -602,13 +667,45 @@ document.addEventListener('change', e => {
 });
 
 document.addEventListener('click', e => {
+  const seg = e.target.closest('#viewSeg button');
+  if (seg) {
+    VIEW = seg.dataset.view;
+    document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('active', b === seg));
+    recalc();
+    return;
+  }
+  const ev = e.target.closest('[data-evday]');
+  if (ev) {
+    simStop();
+    simDay = +ev.dataset.evday;
+    $('#simScrub').value = simDay;
+    updateSimFrame(simDay);
+    document.querySelectorAll('.ev').forEach(x => x.classList.toggle('sel', x === ev));
+    return;
+  }
+  const addS = e.target.closest('[data-addsearch]');
+  if (addS) {
+    const cityId = addS.dataset.addsearch;
+    const n = Math.max(1, +addS.dataset.n || 1);
+    for (let k = 0; k < n; k++) {
+      const cnt = SCENARIO.services.filter(s => s.cityId === cityId && svcStatus(s) === 'search').length + 1;
+      SCENARIO.services.push({
+        id: 's' + Date.now() + Math.floor(Math.random() * 10000) + k,
+        cityId, name: 'Поиск ' + cnt, status: 'search',
+        posts: 2, lifts: 1, mechanics: 5, daysPerWeek: 5, shiftHours: 8,
+        readyDate: SCENARIO.calendar.simStart
+      });
+    }
+    renderServices(); renderVerifySelect(); recalc();
+    return;
+  }
   const add = e.target.closest('[data-add]');
   if (add) {
     const cityId = add.dataset.add;
     const n = SCENARIO.services.filter(s => s.cityId === cityId).length + 1;
     SCENARIO.services.push({
       id: 's' + Date.now() + Math.floor(Math.random() * 1000),
-      cityId, name: 'Сервис ' + n,
+      cityId, name: 'Сервис ' + n, status: 'active',
       posts: 2, lifts: 1, mechanics: 5, daysPerWeek: 5, shiftHours: 8,
       readyDate: SCENARIO.calendar.simStart
     });
@@ -645,6 +742,158 @@ $('#simScrub').addEventListener('input', e => {
   simDay = +e.target.value;
   updateSimFrame(simDay);
 });
+
+/* ---------- экспорт .xlsx (без библиотек: zip stored + минимальный OOXML) ---------- */
+const CRC_T = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) { // files: [{name, data:string}] — без сжатия, имена в UTF-8
+  const enc = new TextEncoder();
+  const le16 = v => [v & 255, (v >> 8) & 255];
+  const le32 = v => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
+  const parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.data);
+    const crc = crc32(data);
+    const head = new Uint8Array([0x50, 0x4B, 0x03, 0x04, ...le16(20), ...le16(0x0800), ...le16(0),
+      ...le16(0), ...le16(0x21), ...le32(crc), ...le32(data.length), ...le32(data.length),
+      ...le16(name.length), ...le16(0)]);
+    parts.push(head, name, data);
+    central.push({ name, crc, size: data.length, off });
+    off += head.length + name.length + data.length;
+  }
+  let cdLen = 0;
+  const cd = [];
+  for (const c of central) {
+    const rec = new Uint8Array([0x50, 0x4B, 0x01, 0x02, ...le16(20), ...le16(20), ...le16(0x0800), ...le16(0),
+      ...le16(0), ...le16(0x21), ...le32(c.crc), ...le32(c.size), ...le32(c.size),
+      ...le16(c.name.length), ...le16(0), ...le16(0), ...le16(0), ...le16(0), ...le32(0), ...le32(c.off)]);
+    cd.push(rec, c.name);
+    cdLen += rec.length + c.name.length;
+  }
+  const end = new Uint8Array([0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, ...le16(files.length), ...le16(files.length),
+    ...le32(cdLen), ...le32(off), 0, 0]);
+  return new Blob([...parts, ...cd, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+const escX = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function sheetXML(rows) { // ячейки: number → <v>, прочее → inline string
+  const colL = i => { let s = ''; i++; while (i) { s = String.fromCharCode(65 + (i - 1) % 26) + s; i = Math.floor((i - 1) / 26); } return s; };
+  const body = rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => {
+    if (v === null || v === undefined || v === '') return '';
+    const ref = colL(ci) + (ri + 1);
+    return (typeof v === 'number' && isFinite(v))
+      ? `<c r="${ref}"><v>${Math.round(v * 100) / 100}</v></c>`
+      : `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escX(v)}</t></is></c>`;
+  }).join('') + '</row>').join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+
+function exportXlsx() {
+  const dlD = parseD(SCENARIO.calendar.deadline);
+  const dl = RU_D(dlD);
+  const today = new Date();
+  const scenText = sim => {
+    const pct = sim.totalDemand ? Math.round(100 * sim.doneByDeadline / sim.totalDemand) : 0;
+    return `${fmtI(sim.doneByDeadline)} из ${fmtI(sim.totalDemand)} машин к дедлайну (${pct}%)` +
+      (sim.finishDate ? `, финиш ${RU_D(sim.finishDate)}` : ', финиш за горизонтом');
+  };
+  const svcCap = s => SIM_PLAN.capBySvc[s.id].perWeek;
+  const cityName = id => { const c = SCENARIO.cities.find(x => x.id === id); return c ? c.name : id; };
+  const latestTxt = s => {
+    if (!(s.id in LATEST)) return '';
+    return LATEST[s.id] ? RU_D(LATEST[s.id]) : 'город не успевает — усилить';
+  };
+
+  /* Лист 1: Поиск партнёров */
+  const searchRows = [
+    ['UMO × Binar — план поиска сервисных партнёров'],
+    ['Сформировано', RU_D(today), '', 'Дедлайн кампании', dl],
+    ['Факт (только работающие)', scenText(SIM_FACT)],
+    ['С планом поиска', scenText(SIM_PLAN)],
+    [],
+    ['Город', 'Позиция', 'Статус', 'Посты', 'Подъёмники', 'Механики', 'Дней/нед', 'Часов/день', 'Мощность, маш/нед', 'Старт не позже']
+  ];
+  SCENARIO.services.filter(s => svcStatus(s) !== 'active')
+    .sort((a, b) => a.cityId < b.cityId ? -1 : 1)
+    .forEach(s => searchRows.push([cityName(s.cityId), s.name, ST_LABEL[svcStatus(s)],
+      s.posts, s.lifts, s.mechanics, s.daysPerWeek, s.shiftHours, svcCap(s), latestTxt(s)]));
+  if (searchRows.length === 6) searchRows.push(['Открытых позиций нет — весь план закрыт работающими партнёрами.']);
+
+  /* Лист 2: Реестр партнёров */
+  const regRows = [['Город', 'Партнёр', 'Статус', 'Посты', 'Подъёмники', 'Механики', 'Дней/нед', 'Часов/день', 'Готов с', 'Мощность, маш/нед', 'Узкое место']];
+  SCENARIO.cities.forEach(c => {
+    SCENARIO.services.filter(s => s.cityId === c.id).forEach(s => {
+      const cap = SIM_PLAN.capBySvc[s.id];
+      regRows.push([c.name, s.name, ST_LABEL[svcStatus(s)], s.posts, s.lifts, s.mechanics,
+        s.daysPerWeek, s.shiftHours, s.readyDate, cap.perWeek, cap.binding]);
+    });
+  });
+
+  /* Лист 3: Квоты по неделям (по сценарию «с планом») */
+  const weeks = SIM_PLAN.campaignWeeks;
+  const quotaRows = [['Город / партнёр', ...weeks.map(w => w.label), 'Σ кампания', 'Хвост после дедлайна']];
+  const dlW = weeks.length ? weeks[weeks.length - 1].w : 0;
+  const tail = arr => { let t = 0; for (let w = dlW + 1; w < arr.length; w++) t += arr[w]; return t; };
+  SCENARIO.cities.forEach(c => {
+    const list = SCENARIO.services.filter(s => s.cityId === c.id);
+    if (!list.length && SIM_PLAN.cityStats[c.id].demand <= 0) return;
+    const cw = SIM_PLAN.pcw[c.id] || [];
+    quotaRows.push([c.name, ...weeks.map(w => Math.round(cw[w.w] || 0)),
+      Math.round(weeks.reduce((a, w) => a + (cw[w.w] || 0), 0)), Math.round(tail(cw))]);
+    list.forEach(s => {
+      const sw = SIM_PLAN.psw[s.id] || [];
+      quotaRows.push(['    ' + s.name, ...weeks.map(w => Math.round(sw[w.w] || 0)),
+        Math.round(weeks.reduce((a, w) => a + (sw[w.w] || 0), 0)), Math.round(tail(sw))]);
+    });
+  });
+  quotaRows.push([]);
+  quotaRows.push(['Квота = машин на установку в неделю; она же — потребность в китах Binar (кит на складе к началу недели).']);
+
+  /* Лист 4: Вводные */
+  const req = perCarReq(SCENARIO);
+  const inputRows = [
+    ['Вводные сценария'],
+    ['Старт кампании', SCENARIO.calendar.simStart, '', 'Дедлайн', SCENARIO.calendar.deadline],
+    ['Нормо-часов на машину', req.mh, '', 'Выработка, %', SCENARIO.process.efficiency],
+    ['Обучение: первые N машин', SCENARIO.process.learnFirstN, '', 'Коэффициент', SCENARIO.process.learnFactor],
+    ['Обменный фонд бамперов, шт', SCENARIO.bumpers.initialPool, '', 'Отбраковка, %', SCENARIO.bumpers.scrapPct],
+    ['Постов на хабах', SCENARIO.bumpers.hubPosts, '', 'Норма подготовки, нч', SCENARIO.bumpers.prepManHours],
+    [],
+    ['Город', 'Хаб', 'Логистика, дн', ...MONTH_COLS, 'Σ']
+  ];
+  SCENARIO.cities.forEach(c => inputRows.push([c.name, c.hub ? 'да' : '', c.hub ? '' : c.transitDays,
+    ...c.demand.map(v => +v || 0), c.demand.reduce((a, b) => a + (+b || 0), 0)]));
+
+  const sheets = [
+    { name: 'Поиск партнёров', rows: searchRows },
+    { name: 'Реестр', rows: regRows },
+    { name: 'Квоты по неделям', rows: quotaRows },
+    { name: 'Вводные', rows: inputRows }
+  ];
+  const overrides = sheets.map((s, k) =>
+    `<Override PartName="/xl/worksheets/sheet${k + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('');
+  const files = [
+    { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${overrides}</Types>` },
+    { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, k) => `<sheet name="${escX(s.name)}" sheetId="${k + 1}" r:id="rId${k + 1}"/>`).join('')}</sheets></workbook>` },
+    { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s, k) => `<Relationship Id="rId${k + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${k + 1}.xml"/>`).join('')}</Relationships>` },
+    ...sheets.map((s, k) => ({ name: `xl/worksheets/sheet${k + 1}.xml`, data: sheetXML(s.rows) }))
+  ];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(zipStore(files));
+  a.download = 'umo-binar-plan.xlsx';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('#btnXlsx').addEventListener('click', exportXlsx);
 
 /* ---------- экспорт / импорт / сброс ---------- */
 $('#btnExport').addEventListener('click', () => {

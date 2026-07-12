@@ -38,7 +38,9 @@ step(() => {
   check('4 вкладки', document.querySelectorAll('.tab').length === 4);
   check('KPI «Парк кампании» заполнен', txt('#kpiTotal') !== '—' && txt('#kpiTotal') !== '', txt('#kpiTotal'));
   check('Парк = 2 250', txt('#kpiTotal').replace(/ |\s/g, '') === '2250', txt('#kpiTotal'));
-  check('Статус-чип рассчитан', !txt('#statusChip').includes('—'), txt('#statusChip'));
+  check('Светофоры «Факт» и «С поиском» рассчитаны',
+    !txt('#chipFact').includes('—') && !txt('#chipPlan').includes('—'),
+    txt('#chipFact') + ' | ' + txt('#chipPlan'));
   check('Тепловая полоса заполнена', $('#heatFill').style.width !== '0' && $('#heatFill').style.width !== '', $('#heatFill').style.width);
   check('Таблица парка отрендерена', document.querySelectorAll('#demandBox input[type=number]').length > 0);
   check('Сервисы отрендерены (24 линии)', document.querySelectorAll('[data-svcrow]').length === 24,
@@ -61,6 +63,46 @@ step(() => {
     document.querySelectorAll('#simSvg [data-count]').length);
   check('Симуляция: маршруты к хабам', document.querySelectorAll('#simSvg .route').length === 12);
   check('Симуляция: readout заполнен', txt('#simReadout').includes('оснащено'));
+  check('Реестр: у каждого партнёра есть статус', document.querySelectorAll('select.status-sel').length === 24);
+  check('Лента событий заполнена', document.querySelectorAll('#evList .ev').length > 3,
+    document.querySelectorAll('#evList .ev').length);
+  check('Кнопка выгрузки .xlsx есть', !!$('#btnXlsx'));
+  check('Переключатель сценария есть', document.querySelectorAll('#viewSeg button').length === 2);
+});
+
+/* ---------- статусы и сценарии ---------- */
+step(() => {
+  // переводим один СПб-сервис в «найти» — факт должен просесть
+  const sel = document.querySelector('select.status-sel');
+  sel.value = 'search';
+  fire(sel, 'input');
+});
+step(() => {
+  const factTxt = txt('#chipFact'), planTxt = txt('#chipPlan');
+  check('Статус «найти»: факт и план разошлись', factTxt !== planTxt.replace('С поиском', 'Факт'), factTxt + ' | ' + planTxt);
+  check('«Старт не позже» посчитан для позиции поиска',
+    document.querySelectorAll('[data-latest]')[0].textContent.length > 0,
+    document.querySelectorAll('[data-latest]')[0].textContent);
+  // переключение сценария меняет KPI
+  const doneBefore = txt('#kpiDone');
+  document.querySelector('#viewSeg [data-view="fact"]').click();
+  check('Сценарий «Факт»: KPI пересчитался', txt('#kpiDone') !== doneBefore, doneBefore + ' → ' + txt('#kpiDone'));
+  document.querySelector('#viewSeg [data-view="plan"]').click();
+  const sel = document.querySelector('select.status-sel');
+  sel.value = 'active';
+  fire(sel, 'input');
+});
+
+/* ---------- xlsx ---------- */
+step(() => {
+  window.URL.createObjectURL = () => 'blob:test';
+  window.URL.revokeObjectURL = () => {};
+  let ok = true, err = '';
+  try { window.exportXlsx(); } catch (e) { ok = false; err = e.message; }
+  check('exportXlsx отрабатывает без ошибок', ok, err);
+  const blob = window.zipStore([{ name: 'test.xml', data: '<a/>' }]);
+  check('zipStore возвращает Blob', blob && blob.size > 60, blob && blob.size);
+  check('sheetXML строит валидную строку', window.sheetXML([['а', 1]]).includes('<row r="1">'));
 });
 
 /* ---------- скраббер симуляции ---------- */
@@ -118,8 +160,8 @@ step(() => {
 
 /* ---------- 5. переключение вкладок ---------- */
 step(() => {
-  document.querySelector('[data-tab="plan"]').click();
-  check('Вкладка «План» активна', $('#tab-plan').classList.contains('active'));
+  document.querySelector('[data-tab="partners"]').click();
+  check('Вкладка «Партнёры и план» активна', $('#tab-partners').classList.contains('active'));
   check('Вкладка «Вводные» скрыта', !$('#tab-inputs').classList.contains('active'));
 });
 

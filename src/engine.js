@@ -57,6 +57,7 @@ const DEFAULT_SCENARIO = {
       n++;
       sc.services.push({
         id: 's' + n, cityId: c.id, name: 'Сервис ' + i,
+        status: 'active', // active = работает | talks = в переговорах | search = надо найти
         posts: 2, lifts: 1, mechanics: 5,
         daysPerWeek: 5, shiftHours: 8,
         readyDate: '2026-09-01'
@@ -116,8 +117,16 @@ function isHubWorkday(sc, date, ds, holidays) {
   return dow(date) < sc.bumpers.hubWorkDays;
 }
 
-/* ---------- симуляция (потоковая модель, тик = день) ---------- */
-function runSim(sc) {
+const svcStatus = s => s.status || 'active';
+
+/* ---------- симуляция (потоковая модель, тик = день) ----------
+   opts.include — Set статусов партнёров, участвующих в прогоне
+   (по умолчанию все: факт + переговоры + поиск). */
+function runSim(sc, opts) {
+  opts = opts || {};
+  const included = opts.include
+    ? sc.services.filter(s => opts.include.has(svcStatus(s)))
+    : sc.services;
   const day0 = parseD(sc.calendar.simStart);
   const monday0 = mondayOf(day0);
   const deadline = parseD(sc.calendar.deadline);
@@ -156,7 +165,7 @@ function runSim(sc) {
   const nhTotal = nonHub.reduce((a, c) => a + totalByCity[c.id], 0) || 1;
   nonHub.forEach(c => stock[c.id] = (+sc.bumpers.initialPool || 0) * totalByCity[c.id] / nhTotal);
 
-  const svc = sc.services.map(s => ({
+  const svc = included.map(s => ({
     ref: s, id: s.id, cityId: s.cityId,
     done: 0, ready: 0, pendingArr: new Float64Array(nDays + 60)
   }));
@@ -290,7 +299,7 @@ function runSim(sc) {
     capBySvc[s.id] = { perDay: c0.cap, perWeek: c0.cap * s.daysPerWeek, binding: c0.binding, detail: c0 };
   });
   const capByCity = {}; cities.forEach(c => capByCity[c.id] = 0);
-  sc.services.forEach(s => { if (capByCity[s.cityId] != null) capByCity[s.cityId] += capBySvc[s.id].perWeek; });
+  included.forEach(s => { if (capByCity[s.cityId] != null) capByCity[s.cityId] += capBySvc[s.id].perWeek; });
 
   // референсная линия для рекомендаций: 2 поста / 1 подъемник / 5 механиков / 5 дн / 8 ч
   const refLine = capacityOf(sc, { posts: 2, lifts: 1, mechanics: 5, shiftHours: 8 }, 1).cap * 5;
@@ -330,8 +339,88 @@ function runSim(sc) {
   };
 }
 
+/* ---------- критические события прогона ---------- */
+function analyzeEvents(sc, res) {
+  const ev = [];
+  const dstr = i => fmtDM(addDays(res.monday0, i));
+  // голодание регионов: эпизоды простоя (разрывы ≤ 3 дн склеиваются, эпизод от 3 дн)
+  sc.cities.filter(c => !c.hub).forEach(c => {
+    const s = res.starvedSeries[c.id]; if (!s) return;
+    let ep = [];
+    const flush = () => {
+      if (ep.length >= 3) ev.push({ day: ep[0], sev: 'crit', kind: 'starve', cityId: c.id,
+        text: `${c.name}: встал без бамперов — ${ep.length} дн простоя с ${dstr(ep[0])}` });
+      ep = [];
+    };
+    for (let i = 0; i < res.nDays; i++) {
+      if (!s[i]) continue;
+      if (ep.length && i - ep[ep.length - 1] > 3) flush();
+      ep.push(i);
+    }
+    flush();
+  });
+  // очередь хабов выше дневной мощности
+  if (isFinite(res.hubCapDay)) {
+    let over = false;
+    for (let i = 0; i <= res.deadlineIdx && i < res.nDays; i++) {
+      if (!over && res.hubQueueSeries[i] > res.hubCapDay) {
+        over = true;
+        ev.push({ day: i, sev: 'crit', kind: 'hub',
+          text: `Хабы захлебнулись: очередь ${Math.round(res.hubQueueSeries[i])} бамперов при мощности ${Math.round(res.hubCapDay)}/день` });
+      }
+      if (over && res.hubQueueSeries[i] <= res.hubCapDay / 2) over = false;
+    }
+  }
+  // города, укомплектованные полностью
+  sc.cities.forEach(c => {
+    const dem = res.totalByCity[c.id]; if (dem <= 0) return;
+    const s = res.doneSeries[c.id];
+    for (let i = 0; i < res.nDays; i++) {
+      if (s[i] >= dem - 1e-6) {
+        ev.push({ day: i, sev: i <= res.deadlineIdx ? 'good' : 'warn', kind: 'done', cityId: c.id,
+          text: `${c.name}: парк оснащён полностью${i > res.deadlineIdx ? ' — но после дедлайна' : ''}` });
+        break;
+      }
+    }
+  });
+  // дедлайн и финиш
+  const pct = res.totalDemand ? res.doneByDeadline / res.totalDemand : 0;
+  ev.push({ day: res.deadlineIdx, sev: pct >= 1 - 1e-9 ? 'good' : pct >= 0.9 ? 'warn' : 'crit', kind: 'deadline',
+    text: `Дедлайн: оснащено ${Math.round(res.doneByDeadline)} из ${Math.round(res.totalDemand)} (${Math.round(pct * 100)}%)` });
+  if (!res.finishDate) {
+    ev.push({ day: res.nDays - 1, sev: 'crit', kind: 'finish',
+      text: `Даже к горизонту симуляции остаётся ${Math.round(res.totalDemand - res.doneCum[res.nDays - 1])} машин` });
+  }
+  ev.sort((a, b) => a.day - b.day || (a.sev === 'crit' ? -1 : 1));
+  ev.forEach(e => e.date = dstr(e.day));
+  return ev;
+}
+
+/* ---------- последний допустимый старт партнёра ----------
+   Пробные прогоны по понедельникам: до какой даты слот svcId может стартовать,
+   чтобы его город всё же успел к дедлайну. null — город не успевает даже
+   при старте с первого дня. */
+function latestStart(sc, svcId, include) {
+  const s0 = sc.services.find(x => x.id === svcId);
+  if (!s0) return null;
+  const trial = JSON.parse(JSON.stringify(sc));
+  const ts = trial.services.find(x => x.id === svcId);
+  const day0 = parseD(sc.calendar.simStart);
+  const deadline = parseD(sc.calendar.deadline);
+  const cands = [day0];
+  for (let m = addDays(mondayOf(day0), 7); m <= deadline; m = addDays(m, 7)) cands.push(m);
+  let best = null;
+  for (const d of cands) {
+    ts.readyDate = d2s(d);
+    const r = runSim(trial, include ? { include } : undefined);
+    if (r.cityStats[s0.cityId].leftAtDeadline < 0.5) best = d;
+    else break; // позже — только хуже
+  }
+  return best;
+}
+
 /* экспорт для node-теста */
 if (typeof module !== 'undefined') {
-  module.exports = { DEFAULT_SCENARIO, runSim, capacityOf, perCarReq, parseD, d2s, addDays, mondayOf, fmtDM, MONTH_COLS };
+  module.exports = { DEFAULT_SCENARIO, runSim, capacityOf, perCarReq, analyzeEvents, latestStart, svcStatus, parseD, d2s, addDays, mondayOf, fmtDM, MONTH_COLS };
 }
 

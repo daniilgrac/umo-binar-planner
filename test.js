@@ -90,6 +90,30 @@ const msk = r50.cityStats['msk'];
 check('Мск: мощность ниже потребности (впритык)', msk.capWeekly < msk.needWeekly && (msk.needWeekly - msk.capWeekly) / msk.needWeekly < 0.10,
   msk.capWeekly.toFixed(1) + ' < ' + msk.needWeekly.toFixed(1) + ' маш/нед');
 
+/* ---------- 8. Статусы партнёров и два сценария ---------- */
+const scS = clone(E.DEFAULT_SCENARIO);
+scS.services.filter(s => s.cityId === 'spb').forEach(s => s.status = 'search');
+const rFact = E.runSim(scS, { include: new Set(['active']) });
+check('Факт-сценарий: позиции поиска исключены (СПб = 0 маш/нед)', rFact.capByCity['spb'] === 0, rFact.capByCity['spb']);
+const rPlan = E.runSim(scS);
+check('План-сценарий: позиции поиска включены (СПб ≈ 84)', Math.abs(rPlan.capByCity['spb'] - 84) < 1, rPlan.capByCity['spb'].toFixed(1));
+check('Факт хуже плана', rFact.doneByDeadline < rPlan.doneByDeadline - 100,
+  rFact.doneByDeadline.toFixed(0) + ' < ' + rPlan.doneByDeadline.toFixed(0));
+
+/* ---------- 9. События и «старт не позже» ---------- */
+const evs = E.analyzeEvents(sc, r50);
+check('События: дедлайн, голодание и перегруз в ленте',
+  evs.some(e => e.kind === 'deadline') && evs.some(e => e.kind === 'starve'), evs.length + ' событий');
+check('События отсортированы по дням', evs.every((e, i) => !i || e.day >= evs[i - 1].day));
+
+const scL = clone(E.DEFAULT_SCENARIO);
+scL.bumpers.initialPool = 350;
+const lsSmall = E.latestStart(scL, 's20'); // Казань: одна линия, запас мощности
+check('«Старт не позже» для города с запасом — позже старта кампании',
+  lsSmall && E.d2s(lsSmall) > scL.calendar.simStart, lsSmall ? E.d2s(lsSmall) : 'null');
+const lsSpb = E.latestStart(clone(E.DEFAULT_SCENARIO), 's4'); // СПб впритык
+check('«Старт не позже» для города впритык — null (не успевает)', lsSpb === null, lsSpb ? E.d2s(lsSpb) : 'null');
+
 /* ---------- итог ---------- */
 console.log(failed ? `\n${failed} проверок провалено — регрессия ядра!` : '\nВсе проверки пройдены.');
 process.exit(failed ? 1 : 0);
