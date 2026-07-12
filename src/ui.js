@@ -412,7 +412,7 @@ function buildSimScene() {
     let ly;
     if (c.hub) {
       ly = cy + 20 * s + 20;
-      nodes += `<polygon points="${pts}" fill="#FC3F1D" opacity="0.92"/>` +
+      nodes += `<polygon points="${pts}" fill="#CE3212" opacity="0.95"/>` +
         `<text x="${cx}" y="${cy + 3.5 * s}" text-anchor="middle" fill="#fff" font-size="${(9 * s).toFixed(1)}" font-weight="700" font-family="Inter,sans-serif" letter-spacing="1">ХАБ</text>` +
         `<rect x="${cx - 20}" y="${(cy + 20 * s + 6).toFixed(1)}" width="40" height="4" rx="2" fill="#1A1D21"/>` +
         `<rect data-hubbar="${c.id}" x="${cx - 20}" y="${(cy + 20 * s + 6).toFixed(1)}" width="0" height="4" rx="2" fill="url(#heatH)"/>`;
@@ -507,11 +507,11 @@ function svgTimeChart(opts) {
     const i = wk.w * 7;
     if (i < i0) return;
     g += `<line x1="${x(i).toFixed(1)}" y1="${T}" x2="${x(i).toFixed(1)}" y2="${T + ih}" stroke="#1C1F24"/>`;
-    if (k % 2 === 0) g += `<text x="${x(i).toFixed(1)}" y="${H - 8}" fill="#6A7078" ${MONO_F} text-anchor="middle">${wk.label.split('–')[0]}</text>`;
+    if (k % 2 === 0) g += `<text x="${x(i).toFixed(1)}" y="${H - 8}" fill="#8A9099" ${MONO_F} text-anchor="middle">${wk.label.split('–')[0]}</text>`;
   });
   [0, yMax / 2, yMax].forEach(v => {
     g += `<line x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}" stroke="#1C1F24"/>` +
-      `<text x="${L - 6}" y="${(y(v) + 3).toFixed(1)}" fill="#6A7078" ${MONO_F} text-anchor="end">${Math.round(v)}</text>`;
+      `<text x="${L - 6}" y="${(y(v) + 3).toFixed(1)}" fill="#8A9099" ${MONO_F} text-anchor="end">${Math.round(v)}</text>`;
   });
   const dx = x(Math.min(SIM.deadlineIdx, n - 1)).toFixed(1);
   g += `<line x1="${dx}" y1="${T}" x2="${dx}" y2="${T + ih}" stroke="#3A3F46" stroke-dasharray="2 3"/>` +
@@ -573,7 +573,8 @@ function renderDashGantt() {
       body += `<tr><td class="t" style="padding-left:22px">${esc(s.name)}</td>` + weeks.map(wk => {
         const v = sw[wk.w] || 0;
         const u = Math.min(1, v / wcap);
-        const bg = v > 0.5 ? ` style="background:rgba(255,138,0,${(0.10 + 0.5 * u).toFixed(2)})"` : '';
+        // заливка ограничена, а текст в залитых ячейках светлее — чтобы держать AA-контраст
+        const bg = v > 0.5 ? ` style="background:rgba(255,138,0,${(0.07 + 0.28 * u).toFixed(2)});color:#CDD2D9"` : '';
         return `<td${bg}>${Math.round(v) || '·'}</td>`;
       }).join('') + '</tr>';
     });
