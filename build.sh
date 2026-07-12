@@ -10,4 +10,5 @@ cd "$(dirname "$0")"
   printf '</script>\n'
   cat src/part_tail.html
 } > umo-binar-planner.html
-echo "Собрано: umo-binar-planner.html ($(wc -c < umo-binar-planner.html | tr -d ' ') байт)"
+cp umo-binar-planner.html index.html   # копия для GitHub Pages (короткая ссылка)
+echo "Собрано: umo-binar-planner.html ($(wc -c < umo-binar-planner.html | tr -d ' ') байт) + index.html"
