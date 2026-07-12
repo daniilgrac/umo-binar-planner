@@ -252,7 +252,7 @@ tr.row-talks td{background:rgba(124,141,160,.05)}
     <div class="kpi"><div class="kpi-l" id="kpiDoneL">Оснащено к дедлайну</div><div class="kpi-v" id="kpiDone">—</div></div>
     <div class="kpi"><div class="kpi-l">Прогноз финиша</div><div class="kpi-v" id="kpiFinish">—</div></div>
     <div class="kpi"><div class="kpi-l">Темп · надо / есть, маш/нед</div><div class="kpi-v" id="kpiRate">—</div></div>
-    <div class="kpi"><div class="kpi-l">Хабы · пик / мощность, бамп/день</div><div class="kpi-v" id="kpiHub">—</div></div>
+    <div class="kpi"><div class="kpi-l">Хабы · задание под пик</div><div class="kpi-v" id="kpiHub">—</div></div>
   </div>
 </header>
 
@@ -301,8 +301,14 @@ tr.row-talks td{background:rgba(124,141,160,.05)}
 
   <details class="sec" open>
     <summary><span class="sec-t">4 · Бамперный контур и хабы</span><span class="sec-hint" id="hintBump"></span>
-      <span class="sec-why">Лючок режется из родного бампера в хабах Мск/СПб. Фонд и посты хабов могут душить и регионы, и сами хабы.</span></summary>
+      <span class="sec-why">Лючок режется из родного бампера в хабах Мск/СПб. Контур не ограничивает сервисы — модель формирует хабам задание: сколько бамперов, куда и к какой неделе подготовить.</span></summary>
     <div class="sec-body" id="bumpBox"></div>
+  </details>
+
+  <details class="sec" open>
+    <summary><span class="sec-t">5 · Средний сервис-партнёр</span><span class="sec-hint" id="hintAvg"></span>
+      <span class="sec-why">Единица планирования поиска: из такого сервиса модель собирает план — сколько партнёров нужно в каждом городе, чтобы успеть.</span></summary>
+    <div class="sec-body" id="avgBox"></div>
   </details>
 
   <details class="sec">
@@ -336,7 +342,7 @@ tr.row-talks td{background:rgba(124,141,160,.05)}
       </div>
       <div class="sim-readout" id="simReadout"></div>
       <div class="sim-map"><svg id="simSvg" viewBox="0 0 960 560" xmlns="http://www.w3.org/2000/svg"></svg></div>
-      <div class="legend">Узлы наливаются тепловым градиентом по доле оснащённого парка на текущий день. Пунктирные топливопроводы — маршруты бамперов в хабы; линия оживает, когда город работает. Красный пульс — узкое место: город простаивает без бамперов или очередь хаба выше дневной мощности.</div>
+      <div class="legend">Узлы наливаются тепловым градиентом по доле оснащённого парка на текущий день. Пунктирные топливопроводы — маршруты бамперов в хабы; линия оживает, когда город работает. Красный пульс — узкое место: очередь машин при нехватке сервисов или пиковый день нагрузки хабов.</div>
     </div>
   </div>
 </section>
@@ -353,19 +359,20 @@ tr.row-talks td{background:rgba(124,141,160,.05)}
   <div class="tblwrap" id="dashGantt"></div>
   <div class="legend">Заливка ячейки — установки за неделю относительно мощности линии: чем «горячее», тем плотнее загружен сервис. Точка · — линия простаивала.</div>
 
-  <h3 class="pt">Хабы · подготовка бамперов, шт/день</h3>
+  <h3 class="pt">Задание хабам · подготовка бамперов, шт/день</h3>
   <div class="chartbox" id="dashHub"></div>
-  <div class="legend">Тёплая область — сколько бамперов хабы реально резали в день (свои города + регионы). Пунктир — мощность постов. Красная линия — очередь региональных бамперов, ждущих подготовки.</div>
+  <div class="legend">Тёплая область — сколько бамперов хабы должны готовить в день (нарезка своих городов + восстановление региональных возвратов). Пунктир — пик, под него считаются посты.</div>
 
-  <h3 class="pt">Обменный фонд бамперов в регионах, шт</h3>
+  <h3 class="pt">Оборотный фонд бамперов, шт в обороте</h3>
   <div class="chartbox" id="dashPool"></div>
-  <div class="legend">Суммарный запас подготовленных бамперов по всем городам без хаба. Провалы к нулю — «голодание»: машины есть, ставить нечего.</div>
+  <div class="legend">Сколько подготовленных бамперов одновременно «в поле»: отгружены в регионы и ещё не восполнены возвратами. Пик — требуемый размер обменного фонда к старту.</div>
 </section>
 
 <section id="tab-partners" class="tabpane">
   <div class="toolbar">
     <button class="btn primary" id="btnXlsx">Выгрузить план (.xlsx)</button>
-    <span class="note">Реестр партнёров: что работает, что в переговорах и кого ещё искать. Дефициты считаются по сценарию «с планом поиска».</span>
+    <button class="btn" id="btnPlan" title="Пересобирает позиции «найти» от среднего сервиса; работающих и переговоры не трогает">Пересчитать план поиска</button>
+    <span class="note">Реестр партнёров: что работает, что в переговорах и кого ещё искать. План поиска модель строит сама от «среднего сервиса» из Вводных.</span>
   </div>
 
   <h3 class="pt" style="margin-top:0">Дефициты и рекомендации</h3>
@@ -378,6 +385,11 @@ tr.row-talks td{background:rgba(124,141,160,.05)}
     <span><span class="st-dot st-search"></span>надо найти — позиция для поиска</span>
   </div>
   <div id="svcBox"></div>
+
+  <h3 class="pt">Задание хабам · подготовка бамперов</h3>
+  <div class="recs" id="hubTaskSum" style="margin-bottom:10px"></div>
+  <div class="tblwrap" id="hubTaskBox"></div>
+  <div class="legend">Сколько подготовленных бамперов должно быть готово к началу недели: для Мск/СПб — нарезка своих в день снятия, для регионов — отгрузка из хаба за «логистику» дней до установки. Считается по выбранному в шапке сценарию.</div>
 
   <h3 class="pt">Недельные квоты по сервисам, машин</h3>
   <div class="tblwrap" id="quotaBox"></div>

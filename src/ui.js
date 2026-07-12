@@ -88,15 +88,27 @@ function renderBumpers() {
   const b = SCENARIO.bumpers;
   $('#bumpBox').innerHTML = `
     <div class="frow">
-      <div class="f"><label>Стартовый обменный фонд, шт</label><input type="number" min="0" data-bind="bumpers.initialPool" value="${b.initialPool}"></div>
-      <div class="f"><label>Постов на хабах Мск+СПб, шт</label><input type="number" min="0" data-bind="bumpers.hubPosts" value="${b.hubPosts}"></div>
       <div class="f"><label>Подготовка бампера, нч</label><input type="number" min="0" step="0.5" data-bind="bumpers.prepManHours" value="${b.prepManHours}"></div>
       <div class="f"><label>Отбраковка б/у бамперов, %</label><input type="number" min="0" max="100" data-bind="bumpers.scrapPct" value="${b.scrapPct}"></div>
       <div class="f"><label>Рабочих дней хаба в неделю</label><input type="number" min="1" max="7" data-bind="bumpers.hubWorkDays" value="${b.hubWorkDays}"></div>
       <div class="f"><label>Смена хаба, ч</label><input type="number" min="1" data-bind="bumpers.hubShiftHours" value="${b.hubShiftHours}"></div>
     </div>
     <div class="note" id="bumpHint" style="font-family:var(--mono)"></div>
-    <div class="note" style="margin-top:6px">Схема: в городах с хабом бампер снимается, режется в тот же день (в приоритете), монтаж — на следующий рабочий день. В остальных городах машина сразу получает подготовленный бампер из обменного фонда, а её родной уезжает в хаб, готовится в остаток мощности постов и пополняет фонд. Стартовый фонд распределяется по городам пропорционально парку. Лючок вырезается из самого бампера — цветоподбор не требуется.</div>`;
+    <div class="note" style="margin-top:6px">Схема: в городах с хабом бампер снимается и режется в тот же день, монтаж — на следующий. В регионах машина сразу получает подготовленный бампер из обменного фонда, а родной уезжает в хаб, восстанавливается и возвращается в фонд. Размер фонда, посты хабов и недельный график подготовки модель считает сама — задание на вкладке «Партнёры и план». Лючок вырезается из самого бампера — цветоподбор не требуется.</div>`;
+}
+
+function renderAvg() {
+  const a = SCENARIO.avgService;
+  $('#avgBox').innerHTML = `
+    <div class="frow">
+      <div class="f"><label>Постов</label><input type="number" min="1" data-bind="avgService.posts" value="${a.posts}" style="width:52px"></div>
+      <div class="f"><label>Подъемников</label><input type="number" min="0" data-bind="avgService.lifts" value="${a.lifts}" style="width:52px"></div>
+      <div class="f"><label>Механиков</label><input type="number" min="1" data-bind="avgService.mechanics" value="${a.mechanics}" style="width:52px"></div>
+      <div class="f"><label>Дней в неделю</label><input type="number" min="1" max="7" data-bind="avgService.daysPerWeek" value="${a.daysPerWeek}" style="width:52px"></div>
+      <div class="f"><label>Часов в день</label><input type="number" min="1" max="24" data-bind="avgService.shiftHours" value="${a.shiftHours}" style="width:52px"></div>
+    </div>
+    <div class="note" id="avgHint" style="font-family:var(--mono)"></div>
+    <div class="note" style="margin-top:6px">Профиль подтверждён рыночным ориентиром: средний СТО — 2–5 постов, ~1,5 механика на пост; установка сопоставимого оборудования (Webasto) занимает 3–10 ч, т.е. 1–2 машины на пост в день. Изменение профиля применяется к новым позициям — нажмите «Пересчитать план поиска» на вкладке партнёров.</div>`;
 }
 
 const ST_LABEL = { active: 'работает', talks: 'переговоры', search: 'найти' };
@@ -180,15 +192,17 @@ function updateHeader() {
   const needW = total / SIM.weeksToDeadline;
   const haveW = Object.values(SIM.capByCity).reduce((a, b) => a + b, 0);
   $('#kpiRate').innerHTML = `${fmtI(needW)} / <span style="color:${haveW >= needW ? 'var(--warm)' : 'var(--action)'}">${fmtI(haveW)}</span>`;
-  $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>/ ${fmt1(SIM.hubCapDay)}${SIM.hubQueuePeak > SIM.hubCapDay ? ' · <span style="color:var(--action)">очередь ' + fmtI(SIM.hubQueuePeak) + '</span>' : ''}</small>`;
+  $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>бамп/дн · ${SIM.hubPostsNeed} постов · фонд ${fmtI(SIM.requiredPool)}</small>`;
   $('#heatFill').style.width = (pct * 100).toFixed(1) + '%';
   $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)} (${VIEW === 'fact' ? 'факт' : 'с планом поиска'}): <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
   $('#heatPct').textContent = Math.round(pct * 100) + '%';
   $('#hintCal').textContent = SIM.weeksToDeadline.toFixed(1).replace('.', ',') + ' нед кампании';
   $('#hintDemand').textContent = fmtI(total) + ' машин';
-  $('#hintBump').textContent = 'фонд ' + fmtI(SCENARIO.bumpers.initialPool) + ' шт · ' + fmt1(SIM.hubCapDay) + ' бамп/день';
+  $('#hintBump').textContent = 'пик ' + fmt1(SIM.hubPeak) + ' бамп/день · ' + SIM.hubPostsNeed + ' постов';
   const req = perCarReq(SCENARIO);
   $('#hintProc').textContent = fmt1(req.mh) + ' нч/машину';
+  const ac = capacityOf(SCENARIO, SCENARIO.avgService, 1);
+  $('#hintAvg').textContent = fmt2(ac.cap) + ' маш/день';
   $('#hintFine').textContent = SCENARIO.process.efficiency + '% · обучение ×' + SCENARIO.process.learnFactor;
 }
 
@@ -259,12 +273,15 @@ function updateServiceCaps() {
 }
 
 function updateBumperHints() {
-  const backlog = SIM.hubQueuePeak > SIM.hubCapDay
-    ? ` Пиковая очередь на подготовку: <span style="color:var(--action)">${fmtI(SIM.hubQueuePeak)}</span> бамперов — постов не хватает.`
-    : ` Пиковая очередь на подготовку ${fmtI(SIM.hubQueuePeak)} шт — в пределах дневной мощности, постов хватает.`;
   $('#bumpHint').innerHTML =
-    `Мощность хабов: <span style="color:var(--warm)">${fmt1(SIM.hubCapDay)}</span> бамперов/день (посты × смена ÷ норма). ` +
-    `Фактический пик по прогону: <span style="color:var(--warm)">${fmt1(SIM.hubPeak)}</span>/день, средняя ${fmt1(SIM.hubAvg)}.` + backlog;
+    `Задание по прогону: пик подготовки <span style="color:var(--warm)">${fmt1(SIM.hubPeak)}</span> бамп/день (средняя ${fmt1(SIM.hubAvg)}) → ` +
+    `нужно <span style="color:var(--warm)">${SIM.hubPostsNeed}</span> постов оснастки · оборотный фонд к старту <span style="color:var(--warm)">${fmtI(SIM.requiredPool)}</span> шт · ` +
+    `закупка ~<span style="color:var(--warm)">${fmtI(SIM.scrapLoss)}</span> новых на компенсацию брака.`;
+  const a = SCENARIO.avgService;
+  const ac = capacityOf(SCENARIO, a, 1);
+  $('#avgHint').innerHTML =
+    `Мощность среднего сервиса: <span style="color:var(--warm)">${fmt2(ac.cap)}</span> маш/день (узкое: ${ac.binding}) → ` +
+    `<span style="color:var(--warm)">${fmt1(ac.cap * a.daysPerWeek)}</span> маш/нед при ${a.daysPerWeek} дн.`;
 }
 
 function updateVerify() {
@@ -312,24 +329,35 @@ function renderRecs() {
     }
     if (cs.capWeekly < cs.needWeekly - 0.5) {
       const add = Math.ceil((cs.needWeekly - cs.capWeekly) / refW);
-      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: даже с планом поиска мощность ${fmt1(cs.capWeekly)} маш/нед при потребности ${fmt1(cs.needWeekly)} — добавьте ещё ~${add} позиций поиска (реф. линия ≈ ${fmt1(refW)} маш/нед) или вторую смену / подъемник.` });
-    } else if (cs.leftAtDeadline > 0.5 && cs.starvedDays <= 5) {
+      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: даже с планом поиска мощность ${fmt1(cs.capWeekly)} маш/нед при потребности ${fmt1(cs.needWeekly)} — нажмите «Пересчитать план поиска» или добавьте ~${add} позиций.` });
+    } else if (cs.leftAtDeadline > 0.5) {
       recs.push({ cls: 'warn', html: `<b>${esc(c.name)}</b>: мощности хватает, но к дедлайну остаётся ${fmtI(cs.leftAtDeadline)} маш — съедают кривая обучения и разгон. Раньше даты готовности партнёров или запас мощности.` });
     }
-    if (cs.starvedDays > 5) {
-      recs.push({ cls: 'crit', html: `<b>${esc(c.name)}</b>: ${cs.starvedDays} дн простоя из-за отсутствия подготовленных бамперов — увеличьте стартовый фонд или ускорьте логистику (${c.transitDays} дн в одну сторону).` });
-    }
   });
-  if (SIM_PLAN.hubQueuePeak > SIM_PLAN.hubCapDay) {
-    recs.push({ cls: 'crit', html: `<b>Хабы Мск/СПб</b>: не успевают готовить бампера — пиковая очередь ${fmtI(SIM_PLAN.hubQueuePeak)} шт при мощности ${fmt1(SIM_PLAN.hubCapDay)}/день. Добавьте посты оснастки (сейчас ${SCENARIO.bumpers.hubPosts}) или удлините смену хаба.` });
-  }
-  const scrap = +SCENARIO.bumpers.scrapPct || 0;
-  const nonHubDemand = SCENARIO.cities.filter(c => !c.hub).reduce((a, c) => a + c.demand.reduce((x, y) => x + (+y || 0), 0), 0);
-  if (scrap > 0 && nonHubDemand > 0) {
-    recs.push({ cls: 'warn', html: `Обменный фонд вымывается браком: при ${scrap}% отбраковки на ${fmtI(nonHubDemand)} региональных машин теряется ~${fmtI(nonHubDemand * scrap / 100)} бамперов. Заложите закупку новых бамперов на компенсацию.` });
-  }
   if (!recs.length) recs.push({ cls: 'good', html: 'Мощности, фонд бамперов и логистика сбалансированы — кампания завершается в срок.' });
   $('#recsBox').innerHTML = recs.map(r => `<div class="rec ${r.cls}"><div>${r.html}</div></div>`).join('');
+}
+
+/* ---------- задание хабам ---------- */
+function renderHubTask() {
+  const s = SIM;
+  $('#hubTaskSum').innerHTML =
+    `<div class="rec warn"><div><b>К старту кампании</b>: изготовить оборотный фонд <b>${fmtI(s.requiredPool)}</b> подготовленных бамперов; развернуть <b>${s.hubPostsNeed}</b> постов оснастки на хабах (пик ${fmt1(s.hubPeak)} бамп/день, средняя ${fmt1(s.hubAvg)}); заложить закупку ~<b>${fmtI(s.scrapLoss)}</b> новых бамперов на компенсацию ${SCENARIO.bumpers.scrapPct}% брака.</div></div>`;
+  const weeks = s.campaignWeeks;
+  const head = `<thead><tr><th>Город · когда готовить</th>${weeks.map(w => `<th>${w.label}</th>`).join('')}<th>Σ</th></tr></thead>`;
+  let body = '';
+  const totW = new Float64Array(weeks.length);
+  SCENARIO.cities.forEach(c => {
+    const cw = s.taskCW[c.id] || [];
+    const sum = weeks.reduce((a, w) => a + (cw[w.w] || 0), 0);
+    if (sum < 0.5) return;
+    const label = c.hub ? `${esc(c.name)} · нарезка на месте` : `${esc(c.name)} · отгрузка за ${c.transitDays} дн`;
+    body += `<tr><td class="t">${label}</td>` +
+      weeks.map((w, k) => { const v = cw[w.w] || 0; totW[k] += v; return `<td class="${Math.round(v) ? 'qv' : 'q0'}">${Math.round(v) || '·'}</td>`; }).join('') +
+      `<td class="sum">${fmtI(sum)}</td></tr>`;
+  });
+  const foot = `<tfoot><tr><td class="t" style="color:var(--text2)">Итого готовить/нед</td>${weeks.map((w, k) => `<td class="sum">${fmtI(totW[k])}</td>`).join('')}<td class="sum">${fmtI(totW.reduce((a, b) => a + b, 0))}</td></tr></tfoot>`;
+  $('#hubTaskBox').innerHTML = `<table>${head}<tbody>${body}</tbody>${foot}</table>`;
 }
 
 /* ---------- лента критических событий ---------- */
@@ -432,9 +460,8 @@ function buildSimScene() {
 
 function updateSimFrame(i) {
   if (!SIM) return;
-  const hubAlert = SIM.hubQueueSeries[i] > SIM.hubCapDay;
-  let pool = 0;
-  Object.values(SIM.stockSeries).forEach(a => { pool += a[i]; });
+  const hubAlert = SIM.hubPeak > 0 && SIM.prepSeries[i] >= SIM.hubPeak * 0.9;
+  const pool = SIM.poolSeries[i];
   for (const c of SCENARIO.cities) {
     const g = SIM_GEOM[c.id];
     if (!g) continue;
@@ -460,7 +487,11 @@ function updateSimFrame(i) {
       if (rt) rt.classList.toggle('active', done - (i > 0 && ds ? ds[i - 1] : 0) > 1e-6);
     }
     const pulse = document.querySelector(`[data-pulse="${c.id}"]`);
-    if (pulse) pulse.classList.toggle('on', c.hub ? hubAlert : !!(SIM.starvedSeries[c.id] && SIM.starvedSeries[c.id][i]));
+    // регионы: пульс — очередь машин выше двух недельных мощностей у отстающего города
+    const cs = SIM.cityStats[c.id];
+    const backlog = !c.hub && cs && cs.leftAtDeadline > 0.5 &&
+      SIM.queueSeries[c.id][i] > Math.max(10, 2 * (SIM.capByCity[c.id] || 0));
+    if (pulse) pulse.classList.toggle('on', c.hub ? hubAlert : backlog);
   }
   const date = addDays(SIM.monday0, i);
   const week = Math.floor((i - SIM.i0) / 7) + 1;
@@ -468,8 +499,8 @@ function updateSimFrame(i) {
   const pctT = SIM.totalDemand > 0 ? SIM.doneCum[i] / SIM.totalDemand : 0;
   $('#simReadout').innerHTML =
     `<span>оснащено <b>${fmtI(SIM.doneCum[i])}</b> / ${fmtI(SIM.totalDemand)} · ${Math.round(pctT * 100)}%</span>` +
-    `<span>фонд регионов <b>${fmtI(pool)}</b> бамп.</span>` +
-    `<span${hubAlert ? ' class="alert"' : ''}>очередь хаба ${fmtI(SIM.hubQueueSeries[i])}</span>` +
+    `<span>в обороте <b>${fmtI(pool)}</b> бамп.</span>` +
+    `<span${hubAlert ? ' class="alert"' : ''}>готовить сегодня ${fmtI(SIM.prepSeries[i])}</span>` +
     (i > SIM.deadlineIdx ? '<span class="alert">после дедлайна</span>' : '');
 }
 
@@ -537,7 +568,7 @@ function renderDashCities() {
     return `<div class="citycard">
       <div class="cc-head"><span class="dot ${cityStatusClass(cs)}"></span><b>${esc(c.name)}</b>${c.hub ? '<span class="hub-tag">ХАБ</span>' : ''}<span class="cc-pct">${Math.round(pct * 100)}%</span></div>
       <div class="heat mini"><div class="heat-fill" style="width:${(pct * 100).toFixed(1)}%"></div></div>
-      <div class="cc-meta">${fmtI(cs.doneByDeadline)} из ${fmtI(cs.demand)} к дедлайну${cs.starvedDays > 5 ? ` · <span style="color:var(--action)">${cs.starvedDays} дн без бамперов</span>` : ''}</div>
+      <div class="cc-meta">${fmtI(cs.doneByDeadline)} из ${fmtI(cs.demand)} к дедлайну${cs.leftAtDeadline > 0.5 ? ` · <span style="color:var(--action)">остаток ${fmtI(cs.leftAtDeadline)}</span>` : ''}</div>
     </div>`;
   }).join('');
 }
@@ -586,19 +617,15 @@ function renderDashboard() {
   renderDashCities();
   renderDashPace();
   renderDashGantt();
-  const capOk = isFinite(SIM.hubCapDay);
   $('#dashHub').innerHTML = svgTimeChart({
-    yCap: capOk ? SIM.hubCapDay : 0,
-    yCapLabel: capOk ? 'мощность ' + fmt1(SIM.hubCapDay) : '',
-    series: [
-      { data: SIM.hubLoadSeries, color: 'var(--mid)', fill: 'rgba(255,138,0,.16)' },
-      { data: SIM.hubQueueSeries, color: 'var(--action)' }
-    ]
+    yCap: SIM.hubPeak,
+    yCapLabel: `пик ${fmt1(SIM.hubPeak)} → ${SIM.hubPostsNeed} постов`,
+    series: [{ data: SIM.prepSeries, color: 'var(--mid)', fill: 'rgba(255,138,0,.16)' }]
   });
-  const pool = new Float64Array(SIM.nDays);
-  Object.values(SIM.stockSeries).forEach(a => { for (let i = 0; i < SIM.nDays; i++) pool[i] += a[i]; });
   $('#dashPool').innerHTML = svgTimeChart({
-    series: [{ data: pool, color: 'var(--cold)', fill: 'rgba(124,141,160,.14)' }]
+    yCap: SIM.requiredPool,
+    yCapLabel: `фонд ${fmtI(SIM.requiredPool)} шт`,
+    series: [{ data: SIM.poolSeries, color: 'var(--cold)', fill: 'rgba(124,141,160,.14)' }]
   });
 }
 
@@ -616,6 +643,7 @@ function recalc() {
   updateBumperHints();
   updateVerify();
   renderRecs();
+  renderHubTask();
   renderQuotas();
   renderDashboard();
   renderEvents();
@@ -858,15 +886,36 @@ function exportXlsx() {
   quotaRows.push([]);
   quotaRows.push(['Квота = машин на установку в неделю; она же — потребность в китах Binar (кит на складе к началу недели).']);
 
-  /* Лист 4: Вводные */
+  /* Лист 4: Бампера — задание хабам */
+  const bumperRows = [
+    ['Задание хабам: подготовка бамперов (сценарий «с планом поиска»)'],
+    ['Оборотный фонд к старту, шт', Math.round(SIM_PLAN.requiredPool),
+      '', 'Постов оснастки под пик', SIM_PLAN.hubPostsNeed],
+    ['Пик подготовки, бамп/день', Math.round(SIM_PLAN.hubPeak * 10) / 10,
+      '', 'Закупка новых на брак, шт', Math.round(SIM_PLAN.scrapLoss)],
+    [],
+    ['Город · когда готовить', ...weeks.map(w => w.label), 'Σ']
+  ];
+  SCENARIO.cities.forEach(c => {
+    const cw = SIM_PLAN.taskCW[c.id] || [];
+    const sum = weeks.reduce((a, w) => a + (cw[w.w] || 0), 0);
+    if (sum < 0.5) return;
+    bumperRows.push([c.name + (c.hub ? ' · нарезка на месте' : ` · отгрузка за ${c.transitDays} дн`),
+      ...weeks.map(w => Math.round(cw[w.w] || 0)), Math.round(sum)]);
+  });
+  bumperRows.push([]);
+  bumperRows.push(['Число = бамперов должно быть готово к началу недели: хабовые города режутся в день снятия, регионам готовые отгружаются за «логистику» дней до установки.']);
+
+  /* Лист 5: Вводные */
   const req = perCarReq(SCENARIO);
+  const avg = SCENARIO.avgService;
   const inputRows = [
     ['Вводные сценария'],
     ['Старт кампании', SCENARIO.calendar.simStart, '', 'Дедлайн', SCENARIO.calendar.deadline],
     ['Нормо-часов на машину', req.mh, '', 'Выработка, %', SCENARIO.process.efficiency],
     ['Обучение: первые N машин', SCENARIO.process.learnFirstN, '', 'Коэффициент', SCENARIO.process.learnFactor],
-    ['Обменный фонд бамперов, шт', SCENARIO.bumpers.initialPool, '', 'Отбраковка, %', SCENARIO.bumpers.scrapPct],
-    ['Постов на хабах', SCENARIO.bumpers.hubPosts, '', 'Норма подготовки, нч', SCENARIO.bumpers.prepManHours],
+    ['Норма подготовки бампера, нч', SCENARIO.bumpers.prepManHours, '', 'Отбраковка, %', SCENARIO.bumpers.scrapPct],
+    ['Средний сервис: посты/подъёмн./механики', `${avg.posts}/${avg.lifts}/${avg.mechanics}`, '', 'Дней × часов', `${avg.daysPerWeek} × ${avg.shiftHours}`],
     [],
     ['Город', 'Хаб', 'Логистика, дн', ...MONTH_COLS, 'Σ']
   ];
@@ -876,6 +925,7 @@ function exportXlsx() {
   const sheets = [
     { name: 'Поиск партнёров', rows: searchRows },
     { name: 'Реестр', rows: regRows },
+    { name: 'Бампера — задание хабам', rows: bumperRows },
     { name: 'Квоты по неделям', rows: quotaRows },
     { name: 'Вводные', rows: inputRows }
   ];
@@ -929,13 +979,21 @@ $('#btnReset').addEventListener('click', () => {
   renderAll();
 });
 
+$('#btnPlan').addEventListener('click', () => {
+  planServices(SCENARIO);
+  renderServices(); renderVerifySelect(); recalc();
+});
+
 /* ---------- старт ---------- */
 function renderAll() {
+  // стартовая точка: если партнёров нет вовсе — модель сама строит план поиска от парка
+  if (!SCENARIO.services.length) planServices(SCENARIO);
   renderCalendar();
   renderDemand();
   renderProcess();
   renderFine();
   renderBumpers();
+  renderAvg();
   renderServices();
   renderVerifySelect();
   recalc();

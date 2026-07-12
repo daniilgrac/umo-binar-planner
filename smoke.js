@@ -43,14 +43,22 @@ step(() => {
     txt('#chipFact') + ' | ' + txt('#chipPlan'));
   check('Тепловая полоса заполнена', $('#heatFill').style.width !== '0' && $('#heatFill').style.width !== '', $('#heatFill').style.width);
   check('Таблица парка отрендерена', document.querySelectorAll('#demandBox input[type=number]').length > 0);
-  check('Сервисы отрендерены (24 линии)', document.querySelectorAll('[data-svcrow]').length === 24,
+  check('Автоплан: реестр заполнен позициями поиска (~20)',
+    Math.abs(document.querySelectorAll('[data-svcrow]').length - 20) <= 2,
     document.querySelectorAll('[data-svcrow]').length);
+  check('Автоплан: все позиции со статусом «найти»',
+    [...document.querySelectorAll('select.status-sel')].every(s => s.value === 'search'));
   check('Рекомендации на «Плане» есть', document.querySelectorAll('#recsBox .rec').length > 0);
   check('Квоты по неделям есть', document.querySelectorAll('#quotaBox td').length > 0);
   check('Проверка расчёта заполнена', txt('#verifyBox').includes('маш/день'));
   check('Календарь: редактируем только дедлайн', !!document.querySelector('input[data-bind="calendar.deadline"]') &&
     document.querySelectorAll('#calBox input').length === 1);
-  check('Поле «постов на хабах» есть', !!document.querySelector('input[data-bind="bumpers.hubPosts"]'));
+  check('Фонд и посты хабов больше не вводные', !document.querySelector('input[data-bind="bumpers.hubPosts"]') &&
+    !document.querySelector('input[data-bind="bumpers.initialPool"]'));
+  check('Секция среднего сервиса есть', !!document.querySelector('#avgBox input[data-bind="avgService.posts"]'));
+  check('Кнопка «Пересчитать план поиска» есть', !!$('#btnPlan'));
+  check('Задание хабам: таблица заполнена', document.querySelectorAll('#hubTaskBox td').length > 20 &&
+    txt('#hubTaskSum').includes('фонд'));
   check('Выработка — в «Тонких настройках»', !!document.querySelector('#fineBox input[data-bind="process.efficiency"]'));
   check('Таблицы китов больше нет', !document.getElementById('kitsBox'));
   check('Легенда «вводные/расчёт» есть', !!document.querySelector('.io-legend'));
@@ -63,7 +71,8 @@ step(() => {
     document.querySelectorAll('#simSvg [data-count]').length);
   check('Симуляция: маршруты к хабам', document.querySelectorAll('#simSvg .route').length === 12);
   check('Симуляция: readout заполнен', txt('#simReadout').includes('оснащено'));
-  check('Реестр: у каждого партнёра есть статус', document.querySelectorAll('select.status-sel').length === 24);
+  check('Реестр: у каждого партнёра есть статус',
+    document.querySelectorAll('select.status-sel').length === document.querySelectorAll('[data-svcrow]').length);
   check('Лента событий заполнена', document.querySelectorAll('#evList .ev').length > 3,
     document.querySelectorAll('#evList .ev').length);
   check('Кнопка выгрузки .xlsx есть', !!$('#btnXlsx'));
@@ -72,24 +81,26 @@ step(() => {
 
 /* ---------- статусы и сценарии ---------- */
 step(() => {
-  // переводим один СПб-сервис в «найти» — факт должен просесть
+  check('Дефолт: факт 0% (партнёров нет), план успевает',
+    txt('#chipFact').includes('0%') && txt('#chipPlan').includes('успеваем'),
+    txt('#chipFact') + ' | ' + txt('#chipPlan'));
+  check('«Старт не позже» посчитан для позиций поиска',
+    document.querySelectorAll('[data-latest]')[0].textContent.length > 0,
+    document.querySelectorAll('[data-latest]')[0].textContent);
+  // подписываем первого партнёра — факт должен вырасти
   const sel = document.querySelector('select.status-sel');
-  sel.value = 'search';
+  sel.value = 'active';
   fire(sel, 'input');
 });
 step(() => {
-  const factTxt = txt('#chipFact'), planTxt = txt('#chipPlan');
-  check('Статус «найти»: факт и план разошлись', factTxt !== planTxt.replace('С поиском', 'Факт'), factTxt + ' | ' + planTxt);
-  check('«Старт не позже» посчитан для позиции поиска',
-    document.querySelectorAll('[data-latest]')[0].textContent.length > 0,
-    document.querySelectorAll('[data-latest]')[0].textContent);
-  // переключение сценария меняет KPI
+  const factPct = +(txt('#chipFact').match(/(\d+)%/) || [0, 0])[1];
+  check('Статус «работает»: факт вырос с нуля', factPct > 0, txt('#chipFact'));
   const doneBefore = txt('#kpiDone');
   document.querySelector('#viewSeg [data-view="fact"]').click();
   check('Сценарий «Факт»: KPI пересчитался', txt('#kpiDone') !== doneBefore, doneBefore + ' → ' + txt('#kpiDone'));
   document.querySelector('#viewSeg [data-view="plan"]').click();
   const sel = document.querySelector('select.status-sel');
-  sel.value = 'active';
+  sel.value = 'search';
   fire(sel, 'input');
 });
 
@@ -130,13 +141,19 @@ step(() => {
 });
 
 /* ---------- 3. живой пересчёт: параметр по data-bind ---------- */
+let bumpBefore;
 step(() => {
-  const inp = document.querySelector('input[data-bind="bumpers.initialPool"]');
-  inp.value = '350';
+  bumpBefore = txt('#bumpHint');
+  const inp = document.querySelector('input[data-bind="bumpers.prepManHours"]');
+  inp.value = '4';
   fire(inp, 'input');
 });
 step(() => {
-  check('Пересчёт фонда: подсказка обновилась', txt('#hintBump').includes('350'), txt('#hintBump'));
+  check('Пересчёт нормы подготовки: задание хабам обновилось',
+    txt('#bumpHint') !== bumpBefore && txt('#bumpHint').includes('постов'), txt('#bumpHint').slice(0, 80));
+  const inp = document.querySelector('input[data-bind="bumpers.prepManHours"]');
+  inp.value = '2';
+  fire(inp, 'input');
 });
 
 /* ---------- 4. добавление и удаление сервиса ---------- */
