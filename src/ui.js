@@ -108,7 +108,7 @@ function renderAvg() {
       <div class="f"><label>Часов в день</label><input type="number" min="1" max="24" data-bind="avgService.shiftHours" value="${a.shiftHours}" style="width:52px"></div>
     </div>
     <div class="note" id="avgHint" style="font-family:var(--mono)"></div>
-    <div class="note" style="margin-top:6px">Профиль подтверждён рыночным ориентиром: средний СТО — 2–5 постов, ~1,5 механика на пост; установка сопоставимого оборудования (Webasto) занимает 3–10 ч, т.е. 1–2 машины на пост в день. Изменение профиля применяется к новым позициям — нажмите «Пересчитать план поиска» на вкладке партнёров.</div>`;
+    <div class="note" style="margin-top:6px">Профиль — то, что партнёр реально выделяет под кампанию: пара постов с подъемником, а не весь СТО (рыночный ориентир: средний СТО 2–5 постов; установка сопоставимого оборудования — 3–10 ч, 1–2 машины на пост в день). Изменение профиля применяется к новым позициям — нажмите «Пересчитать план поиска» на вкладке партнёров.</div>`;
 }
 
 const ST_LABEL = { active: 'работает', talks: 'переговоры', search: 'найти' };
@@ -239,7 +239,7 @@ function cityStatusClass(cs) {
 function updateServiceCaps() {
   // «старт не позже» — пробные прогоны для позиций поиска и переговоров
   LATEST = {};
-  const probe = SCENARIO.services.filter(s => svcStatus(s) !== 'active').slice(0, 20);
+  const probe = SCENARIO.services.filter(s => svcStatus(s) !== 'active').slice(0, 40);
   probe.forEach(s => { LATEST[s.id] = latestStart(SCENARIO, s.id); });
 
   SCENARIO.services.forEach(s => {

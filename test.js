@@ -42,8 +42,9 @@ const capL = E.capacityOf(sc, refLine, sc.process.learnFactor);
 check('Обучение ×1,5 → мощность ÷1,5', Math.abs(capL.cap - cap.cap / 1.5) < 1e-9, capL.cap.toFixed(3));
 
 const avg = E.capacityOf(sc, sc.avgService, 1);
-check('Средний сервис ≈ 3,8 маш/день (узкое — механики)',
-  Math.abs(avg.cap - 3.81) < 0.05 && avg.binding === 'механики', avg.cap.toFixed(2) + ' · ' + avg.binding);
+check('Средний сервис ≈ 2,2 маш/день, 10,9 маш/нед (узкое — механики)',
+  Math.abs(avg.cap - 2.18) < 0.05 && avg.binding === 'механики' && sc.avgService.daysPerWeek === 5,
+  avg.cap.toFixed(2) + ' · ' + avg.binding);
 
 /* ---------- 2. Контрольный прогон (24 линии, бампера не ограничивают) ---------- */
 const r = E.runSim(sc);
@@ -79,11 +80,11 @@ check('Факт хуже плана', rFact.doneByDeadline < rPlan.doneByDeadlin
 const scA = clone(E.DEFAULT_SCENARIO);
 E.planServices(scA);
 const rA = E.runSim(scA);
-check('Автоплан: ~20 позиций поиска', Math.abs(scA.services.length - 20) <= 2, scA.services.length);
+check('Автоплан: ~28 позиций поиска', Math.abs(scA.services.length - 28) <= 3, scA.services.length);
 check('Автоплан: все позиции — search', scA.services.every(s => E.svcStatus(s) === 'search'));
 check('Автоплан закрывает парк к дедлайну', rA.doneByDeadline >= rA.totalDemand - 0.5,
   rA.doneByDeadline.toFixed(0) + ' / ' + rA.totalDemand);
-check('Автоплан: СПб ≈ 5 позиций', scA.services.filter(s => s.cityId === 'spb').length >= 4,
+check('Автоплан: СПб ≈ 9 позиций', Math.abs(scA.services.filter(s => s.cityId === 'spb').length - 9) <= 1,
   scA.services.filter(s => s.cityId === 'spb').length);
 
 // повторный план не трогает работающих

@@ -43,8 +43,8 @@ step(() => {
     txt('#chipFact') + ' | ' + txt('#chipPlan'));
   check('Тепловая полоса заполнена', $('#heatFill').style.width !== '0' && $('#heatFill').style.width !== '', $('#heatFill').style.width);
   check('Таблица парка отрендерена', document.querySelectorAll('#demandBox input[type=number]').length > 0);
-  check('Автоплан: реестр заполнен позициями поиска (~20)',
-    Math.abs(document.querySelectorAll('[data-svcrow]').length - 20) <= 2,
+  check('Автоплан: реестр заполнен позициями поиска (~28)',
+    Math.abs(document.querySelectorAll('[data-svcrow]').length - 28) <= 3,
     document.querySelectorAll('[data-svcrow]').length);
   check('Автоплан: все позиции со статусом «найти»',
     [...document.querySelectorAll('select.status-sel')].every(s => s.value === 'search'));

@@ -444,10 +444,10 @@ const DEFAULT_SCENARIO = {
     hubShiftHours: 8
   },
   /* «средний сервис-партнёр» — единица планирования поиска.
-     4 поста / 2 подъемника / 7 механиков ≈ 3,8 маш/день (узкое — механики):
-     сходится и с просьбой заказчика (3–4 маш/день), и с рыночным профилем
-     среднего СТО РФ (2–5 постов, ~1,5 механика на пост). */
-  avgService: { posts: 4, lifts: 2, mechanics: 7, daysPerWeek: 6, shiftHours: 8 },
+     2 поста / 1 подъемник / 4 механика, 5/7 ≈ 2,2 маш/день, 10,9 маш/нед
+     (узкое — механики). Компактный профиль по просьбе заказчика: партнёр
+     выделяет под кампанию пару постов, а не весь СТО. */
+  avgService: { posts: 2, lifts: 1, mechanics: 4, daysPerWeek: 5, shiftHours: 8 },
   /* стартовая точка: сервисов нет — план поиска строит planServices() от парка */
   services: []
 };
@@ -927,7 +927,7 @@ function renderAvg() {
       <div class="f"><label>Часов в день</label><input type="number" min="1" max="24" data-bind="avgService.shiftHours" value="${a.shiftHours}" style="width:52px"></div>
     </div>
     <div class="note" id="avgHint" style="font-family:var(--mono)"></div>
-    <div class="note" style="margin-top:6px">Профиль подтверждён рыночным ориентиром: средний СТО — 2–5 постов, ~1,5 механика на пост; установка сопоставимого оборудования (Webasto) занимает 3–10 ч, т.е. 1–2 машины на пост в день. Изменение профиля применяется к новым позициям — нажмите «Пересчитать план поиска» на вкладке партнёров.</div>`;
+    <div class="note" style="margin-top:6px">Профиль — то, что партнёр реально выделяет под кампанию: пара постов с подъемником, а не весь СТО (рыночный ориентир: средний СТО 2–5 постов; установка сопоставимого оборудования — 3–10 ч, 1–2 машины на пост в день). Изменение профиля применяется к новым позициям — нажмите «Пересчитать план поиска» на вкладке партнёров.</div>`;
 }
 
 const ST_LABEL = { active: 'работает', talks: 'переговоры', search: 'найти' };
@@ -1058,7 +1058,7 @@ function cityStatusClass(cs) {
 function updateServiceCaps() {
   // «старт не позже» — пробные прогоны для позиций поиска и переговоров
   LATEST = {};
-  const probe = SCENARIO.services.filter(s => svcStatus(s) !== 'active').slice(0, 20);
+  const probe = SCENARIO.services.filter(s => svcStatus(s) !== 'active').slice(0, 40);
   probe.forEach(s => { LATEST[s.id] = latestStart(SCENARIO, s.id); });
 
   SCENARIO.services.forEach(s => {
