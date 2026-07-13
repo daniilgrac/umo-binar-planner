@@ -8,7 +8,7 @@ const fs = require('fs');
 const { JSDOM } = require('jsdom');
 
 const html = fs.readFileSync(__dirname + '/umo-binar-planner.html', 'utf8');
-const dom = new JSDOM(html, { runScripts: 'dangerously' });
+const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'https://localhost/planner/' });
 const { window } = dom;
 const { document } = window;
 
@@ -81,8 +81,8 @@ step(() => {
 
 /* ---------- статусы и сценарии ---------- */
 step(() => {
-  check('Дефолт: факт 0% (партнёров нет), план успевает',
-    txt('#chipFact').includes('0%') && txt('#chipPlan').includes('успеваем'),
+  check('Дефолт: «партнёров пока нет», план успевает',
+    txt('#chipFact').includes('партнёров пока нет') && txt('#chipPlan').includes('успеваем'),
     txt('#chipFact') + ' | ' + txt('#chipPlan'));
   check('«Старт не позже» посчитан для позиций поиска',
     document.querySelectorAll('[data-latest]')[0].textContent.length > 0,
@@ -173,6 +173,34 @@ step(() => {
   check('Удаление сервиса: строк снова исходно',
     document.querySelectorAll('[data-svcrow]').length === svcCount,
     document.querySelectorAll('[data-svcrow]').length);
+});
+
+/* ---------- сохранения, ссылка, вставка из Excel, онбординг ---------- */
+step(() => {
+  check('Онбординг-маршрут показан новичку', !$('#onboard').hidden);
+  $('#obClose').click();
+  check('Онбординг закрывается и запоминается', $('#onboard').hidden && window.localStorage.getItem('umoObDismissed') === '1');
+  check('Автосейв пишется в localStorage', (window.localStorage.getItem('umoBinarScenario') || '').includes('cities'));
+  check('Кнопка «Скопировать ссылку» есть', !!$('#btnLink'));
+  $('#btnLink').click();
+});
+step(() => {
+  check('Ссылка-код: сценарий упакован в hash', window.location.hash.startsWith('#s='),
+    window.location.hash.slice(0, 12) + '…');
+  // вставка парка из Excel
+  $('#btnPaste').click();
+  check('Модал вставки открылся', $('#pasteOverlay').classList.contains('open'));
+  $('#pasteArea').value = 'Город\tИюль\tАвгуст\tСентябрь\tОктябрь\nМосква\t200\t50\t150\t50\nТверь\t5\t5\t5\t5';
+  $('#pasteApply').click();
+});
+step(() => {
+  check('Вставка: отчёт о результате показан', txt('#pasteResult').includes('Обновлено'), txt('#pasteResult').slice(0, 80));
+  const tver = [...document.querySelectorAll('#demandBox td.t')].some(td => td.textContent.trim() === 'Тверь');
+  check('Вставка: Тверь появилась в таблице парка', tver);
+  const mskInp = document.querySelector('input[data-city="msk"][data-cf="demand0"]');
+  check('Вставка: июль Москвы = 200', mskInp && mskInp.value === '200', mskInp && mskInp.value);
+  $('#pasteCancel').click();
+  check('Модал вставки закрылся', !$('#pasteOverlay').classList.contains('open'));
 });
 
 /* ---------- 5. переключение вкладок ---------- */

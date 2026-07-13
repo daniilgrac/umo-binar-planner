@@ -148,7 +148,7 @@ function renderServices() {
         <button class="btn mini" data-add="${c.id}">+ партнёр</button>
       </div>
       ${list.length ? `<div class="tblwrap"><table style="width:100%">
-        <thead><tr><th>Статус</th><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Часов/день</th><th>Готов с</th><th>Мощность — расчёт</th><th>Старт не позже</th><th></th></tr></thead>
+        <thead><tr><th title="найти — позиция для поиска · переговоры — учитывается в плане · работает — договор подписан">Статус</th><th>Название</th><th>Посты</th><th>Подъемн.</th><th>Механики</th><th>Дн/нед</th><th>Часов/день</th><th title="Дата, с которой партнёр начинает ставить машины">Готов с</th><th title="Считается из постов, подъемников и механиков через нормо-часы техпроцесса; «узкое» — ресурс, который ограничивает">Мощность — расчёт</th><th title="Последний понедельник старта, при котором город ещё успевает к дедлайну (пробные прогоны); у работающих не показывается">Старт не позже</th><th></th></tr></thead>
         <tbody>${list.map(svcRow).join('')}</tbody>
       </table></div>` : '<div class="note" style="padding:10px 14px">Партнёров нет — машины этого города копятся в очереди. Нажмите «+ искомые», чтобы модель создала позиции для поиска.</div>'}
     </div>`;
@@ -166,8 +166,15 @@ function renderVerifySelect() {
 }
 
 /* ---------- обновление расчётных значений ---------- */
-function chipInto(el, sim, label) {
+function chipInto(el, sim, label, emptyHint) {
   const dl = parseD(SCENARIO.calendar.deadline);
+  const hasCap = Object.values(sim.capByCity).some(v => v > 0);
+  if (!hasCap) {
+    el.className = 'chip fail';
+    el.innerHTML = '<span>' + label + ' · партнёров пока нет</span>';
+    el.title = emptyHint || '';
+    return;
+  }
   const pct = sim.totalDemand > 0 ? sim.doneByDeadline / sim.totalDemand : 0;
   const okFinish = sim.finishDate && sim.finishDate.getTime() <= dl.getTime();
   let cls, txt;
@@ -183,18 +190,20 @@ function updateHeader() {
   const dbd = SIM.doneByDeadline;
   const pct = total > 0 ? dbd / total : 0;
   const dl = parseD(SCENARIO.calendar.deadline);
-  chipInto($('#chipFact'), SIM_FACT, 'Факт');
-  chipInto($('#chipPlan'), SIM_PLAN, 'С поиском');
+  chipInto($('#chipFact'), SIM_FACT, 'Подписано',
+    'Норма старта: как только у партнёров появится статус «работает», этот светофор оживёт');
+  chipInto($('#chipPlan'), SIM_PLAN, 'С поиском',
+    'План пуст — нажмите «Пересчитать план поиска» на вкладке партнёров');
   $('#kpiTotal').textContent = fmtI(total);
   $('#kpiDoneL').textContent = 'Оснащено к ' + RU_D(dl).slice(0, 5);
-  $('#kpiDone').innerHTML = `${fmtI(dbd)} <small>· ${Math.round(pct * 100)}% · факт ${fmtI(SIM_FACT.doneByDeadline)}</small>`;
+  $('#kpiDone').innerHTML = `${fmtI(dbd)} <small>· ${Math.round(pct * 100)}% · подписано ${fmtI(SIM_FACT.doneByDeadline)}</small>`;
   $('#kpiFinish').textContent = SIM.finishDate ? RU_D(SIM.finishDate) : 'после ' + RU_D(SIM.simEndDate);
   const needW = total / SIM.weeksToDeadline;
   const haveW = Object.values(SIM.capByCity).reduce((a, b) => a + b, 0);
   $('#kpiRate').innerHTML = `${fmtI(needW)} / <span style="color:${haveW >= needW ? 'var(--warm)' : 'var(--action)'}">${fmtI(haveW)}</span>`;
   $('#kpiHub').innerHTML = `${fmt1(SIM.hubPeak)} <small>бамп/дн · ${SIM.hubPostsNeed} постов · фонд ${fmtI(SIM.requiredPool)}</small>`;
   $('#heatFill').style.width = (pct * 100).toFixed(1) + '%';
-  $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)} (${VIEW === 'fact' ? 'факт' : 'с планом поиска'}): <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
+  $('#heatLabel').innerHTML = `Оснащено к ${RU_D(dl)} (${VIEW === 'fact' ? 'подписано' : 'с планом поиска'}): <b>${fmtI(dbd)}</b> из ${fmtI(total)}`;
   $('#heatPct').textContent = Math.round(pct * 100) + '%';
   $('#hintCal').textContent = SIM.weeksToDeadline.toFixed(1).replace('.', ',') + ' нед кампании';
   $('#hintDemand').textContent = fmtI(total) + ' машин';
@@ -648,6 +657,7 @@ function recalc() {
   renderDashboard();
   renderEvents();
   renderSimulation();
+  autosave();
 }
 function recalcSoon() { clearTimeout(recalcTimer); recalcTimer = setTimeout(recalc, 150); }
 
@@ -696,6 +706,12 @@ document.addEventListener('change', e => {
 });
 
 document.addEventListener('click', e => {
+  const ob = e.target.closest('.ob-step');
+  if (ob) {
+    const tab = document.querySelector(`.tab[data-tab="${ob.dataset.goto}"]`);
+    if (tab) tab.click();
+    return;
+  }
   const seg = e.target.closest('#viewSeg button');
   if (seg) {
     VIEW = seg.dataset.view;
@@ -946,6 +962,116 @@ function exportXlsx() {
 }
 $('#btnXlsx').addEventListener('click', exportXlsx);
 
+/* ---------- сохранения: автосейв, ссылка-код, вставка из Excel ----------
+   Всё локально: автосейв — localStorage этого браузера, ссылка несёт сценарий
+   в своём fragment (#s=...) и на сервер не отправляется. Код страницы и дефолт
+   для новых пользователей не меняются. */
+const LS_KEY = 'umoBinarScenario';
+
+function migrateScenario(sc) {
+  const d = DEFAULT_SCENARIO;
+  if (!sc.avgService) sc.avgService = JSON.parse(JSON.stringify(d.avgService));
+  if (!sc.bumpers) sc.bumpers = JSON.parse(JSON.stringify(d.bumpers));
+  if (!sc.calendar) sc.calendar = JSON.parse(JSON.stringify(d.calendar));
+  sc.services = sc.services || [];
+  return sc;
+}
+function autosave() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(SCENARIO)); } catch (e) { /* приватный режим — молча */ }
+}
+
+const b64url = u8 => {
+  let s = '';
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+const b64urlDec = s => {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+};
+async function encodeScenario(sc) {
+  const raw = new TextEncoder().encode(JSON.stringify(sc));
+  if (typeof CompressionStream !== 'undefined') {
+    const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return 'z' + b64url(new Uint8Array(await new Response(stream).arrayBuffer()));
+  }
+  return 'p' + b64url(raw);
+}
+async function decodeScenario(code) {
+  const u8 = b64urlDec(code.slice(1));
+  if (code[0] === 'z') {
+    const stream = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return JSON.parse(await new Response(stream).text());
+  }
+  return JSON.parse(new TextDecoder().decode(u8));
+}
+
+$('#btnLink').addEventListener('click', async () => {
+  const btn = $('#btnLink');
+  try {
+    const code = await encodeScenario(SCENARIO);
+    try { history.replaceState(null, '', '#s=' + code); } catch (e) { location.hash = 's=' + code; }
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(location.href);
+        copied = true;
+      }
+    } catch (e) { /* буфер недоступен — ссылка уже в адресной строке */ }
+    btn.textContent = copied ? 'Ссылка скопирована ✓' : 'Ссылка в адресной строке ↑';
+  } catch (e) {
+    btn.textContent = 'Не вышло — сохраните файлом';
+  }
+  setTimeout(() => { btn.textContent = 'Скопировать ссылку на сценарий'; }, 2500);
+});
+
+/* вставка парка из Excel (TSV из буфера обмена) */
+const parseCell = s => {
+  const v = parseFloat(String(s).replace(/[\s ]/g, '').replace(',', '.'));
+  return isFinite(v) ? Math.max(0, Math.round(v)) : null;
+};
+$('#btnPaste').addEventListener('click', () => {
+  $('#pasteOverlay').classList.add('open');
+  $('#pasteResult').textContent = '';
+  $('#pasteArea').value = '';
+  $('#pasteArea').focus();
+});
+$('#pasteCancel').addEventListener('click', () => $('#pasteOverlay').classList.remove('open'));
+$('#pasteOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('open'); });
+$('#pasteApply').addEventListener('click', () => {
+  let upd = 0, added = 0, skipped = 0;
+  for (const line of $('#pasteArea').value.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const cells = line.split(/\t|;/);
+    const name = (cells[0] || '').trim();
+    const nums = cells.slice(1, 5).map(parseCell);
+    if (!name || cells.length < 2 || nums.every(v => v === null)) { skipped++; continue; } // заголовок или мусор
+    const demand = [0, 1, 2, 3].map(k => nums[k] == null ? 0 : nums[k]);
+    const city = SCENARIO.cities.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (city) { city.demand = demand; upd++; }
+    else {
+      SCENARIO.cities.push({ id: 'c' + Date.now() + '_' + added, name, hub: false, transitDays: 3, demand });
+      added++;
+    }
+  }
+  $('#pasteResult').innerHTML = `Обновлено городов: <b>${upd}</b>, добавлено новых: <b>${added}</b>` +
+    (skipped ? `, пропущено строк: ${skipped}` : '') + '.' +
+    (added ? ' Новым городам задана логистика 3 дн — поправьте в таблице.' : '') +
+    ' Не забудьте «Пересчитать план поиска» на вкладке партнёров.';
+  renderDemand(); renderServices(); renderVerifySelect(); recalc();
+});
+
+/* маршрут-онбординг */
+try { if (!localStorage.getItem('umoObDismissed')) $('#onboard').hidden = false; } catch (e) { $('#onboard').hidden = false; }
+$('#obClose').addEventListener('click', () => {
+  $('#onboard').hidden = true;
+  try { localStorage.setItem('umoObDismissed', '1'); } catch (e) {}
+});
+
 /* ---------- экспорт / импорт / сброс ---------- */
 $('#btnExport').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(SCENARIO, null, 2)], { type: 'application/json' });
@@ -964,7 +1090,7 @@ $('#fileImport').addEventListener('change', e => {
     try {
       const sc = JSON.parse(r.result);
       if (!sc.cities || !sc.services || !sc.process) throw new Error('нет обязательных блоков');
-      SCENARIO = sc;
+      SCENARIO = migrateScenario(sc);
       renderAll();
     } catch (err) {
       alert('Не удалось прочитать сценарий: ' + err.message);
@@ -974,8 +1100,10 @@ $('#fileImport').addEventListener('change', e => {
   r.readAsText(f);
 });
 $('#btnReset').addEventListener('click', () => {
-  if (!confirm('Сбросить все параметры к базовому сценарию?')) return;
+  if (!confirm('Сбросить все параметры к базовому сценарию? Автосохранение будет очищено.')) return;
   SCENARIO = JSON.parse(JSON.stringify(DEFAULT_SCENARIO));
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+  history.replaceState(null, '', location.pathname + location.search);
   renderAll();
 });
 
@@ -984,7 +1112,9 @@ $('#btnPlan').addEventListener('click', () => {
   renderServices(); renderVerifySelect(); recalc();
 });
 
-/* ---------- старт ---------- */
+/* ---------- старт ----------
+   Приоритет: сценарий из ссылки (#s=...) → автосейв этого браузера → дефолт.
+   Новый человек без ссылки и сейва всегда видит базовый сценарий с автопланом. */
 function renderAll() {
   // стартовая точка: если партнёров нет вовсе — модель сама строит план поиска от парка
   if (!SCENARIO.services.length) planServices(SCENARIO);
@@ -998,5 +1128,16 @@ function renderAll() {
   renderVerifySelect();
   recalc();
 }
-renderAll();
+(async function init() {
+  try {
+    const m = location.hash.match(/^#s=(.+)$/);
+    if (m) SCENARIO = migrateScenario(await decodeScenario(decodeURIComponent(m[1])));
+    else {
+      const saved = localStorage.getItem(LS_KEY);
+      if (saved) SCENARIO = migrateScenario(JSON.parse(saved));
+    }
+  } catch (e) { /* битый код или сейв — стартуем с базового */ }
+  if (!SCENARIO || !SCENARIO.cities || !SCENARIO.process) SCENARIO = JSON.parse(JSON.stringify(DEFAULT_SCENARIO));
+  renderAll();
+})();
 
